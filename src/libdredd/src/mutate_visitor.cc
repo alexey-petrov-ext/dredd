@@ -520,9 +520,15 @@ void MutateVisitor::HandleExpr(clang::Expr* expr) {
   // Avoid mutating null pointer assignments, such as int* x = 0, as mutating
   // these expressions in C++ is either not safe or not useful. This mutation
   // is acceptable in C, but we avoid the mutation for consistency.
-  if (expr->isNullPointerConstant(
-          compiler_instance_->getASTContext(),
-          clang::Expr::NullPointerConstantValueDependence()) !=
+  //
+  // The expression may be value-dependent, e.g. 'sizeof(T)' in a template.
+  // Such an expression is not a null pointer constant in C++11, and
+  // NPC_ValueDependentIsNotNull says so explicitly. The default,
+  // NPC_NeverValueDependent, makes Clang reach llvm_unreachable for a
+  // value-dependent expression under -fms-compatibility (the default for MSVC
+  // targets) and before C++11, which crashes release builds of Dredd.
+  if (expr->isNullPointerConstant(compiler_instance_->getASTContext(),
+                                  clang::Expr::NPC_ValueDependentIsNotNull) !=
       clang::Expr::NPCK_NotNull) {
     if (const auto* cast_parent = GetFirstParentOfType<clang::CastExpr>(
             *expr, compiler_instance_->getASTContext())) {
