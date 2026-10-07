@@ -82,17 +82,23 @@ if (-not (Test-Path $llvmConfig)) {
   if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
   Write-Host "Unpacking $archive"
-  # The tar.exe that ships with Windows (bsdtar) reads .tar.xz directly.
-  Invoke-Native "$env:SystemRoot\System32\tar.exe" @('-xf', $archive, '-C', $staging) -NoThrow
-  if ($LASTEXITCODE -ne 0) {
-    # Fall back to 7-Zip if this tar.exe was built without xz support.
+  # The tar.exe that ships with Windows (bsdtar) reads .tar.xz directly only
+  # if it is built with liblzma. Without it, as on Windows Server 2022,
+  # bsdtar hands the archive to an external xz program and can hang, so
+  # decompress with 7-Zip and give tar.exe the plain .tar.
+  $tar = "$env:SystemRoot\System32\tar.exe"
+  $tarVersion = Invoke-Native $tar @('--version')
+  Write-Host $tarVersion
+  if ($tarVersion -match 'liblzma') {
+    Invoke-Native $tar @('-xf', $archive, '-C', $staging)
+  } else {
     $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
-    if (-not $sevenZip) { throw "Could not unpack $archive (tar.exe failed, 7z.exe not found)." }
-    Remove-Item -Recurse -Force $staging
-    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    if (-not $sevenZip) {
+      throw "Could not unpack $archive`: this tar.exe has no xz support and 7z.exe was not found."
+    }
     Invoke-Native $sevenZip.Source @('x', '-y', "-o$staging", $archive)
     $tarFile = Join-Path $staging "$name.tar"
-    Invoke-Native "$env:SystemRoot\System32\tar.exe" @('-xf', $tarFile, '-C', $staging)
+    Invoke-Native $tar @('-xf', $tarFile, '-C', $staging)
     Remove-Item -Force $tarFile
   }
   if (Test-Path $LlvmDir) { Remove-Item -Recurse -Force $LlvmDir }
