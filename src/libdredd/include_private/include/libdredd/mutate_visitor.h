@@ -39,6 +39,7 @@
 #include "libdredd/mutation.h"
 #include "libdredd/mutation_tree_node.h"
 #include "libdredd/options.h"
+#include "llvm/Config/llvm-config.h"
 
 namespace dredd {
 
@@ -57,20 +58,28 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   // statements.
   bool TraverseCaseStmt(clang::CaseStmt* case_stmt);
 
+  // The TypeLoc traversal methods below take a 'traverse_qualifier' argument,
+  // which RecursiveASTVisitor passes from LLVM 22 onwards. The default value
+  // keeps the methods compatible with earlier LLVM versions, which call them
+  // with a single argument.
+
   // Overridden to avoid mutating constant array size expressions.
   bool TraverseConstantArrayTypeLoc(
-      clang::ConstantArrayTypeLoc constant_array_type_loc);
+      clang::ConstantArrayTypeLoc constant_array_type_loc,
+      bool traverse_qualifier = true);
 
   // Overridden to avoid mutating variable array size expressions in C++
   // (because lambdas cannot appear in such expressions).
   bool TraverseVariableArrayTypeLoc(
-      clang::VariableArrayTypeLoc variable_array_type_loc);
+      clang::VariableArrayTypeLoc variable_array_type_loc,
+      bool traverse_qualifier = true);
 
   // Overridden to avoid mutating array sizes that are derived from template
   // parameters, because after template instantiation these lead to either
   // constant or variable-sized arrays, neither of which can be mutated in C++.
   bool TraverseDependentSizedArrayTypeLoc(
-      clang::DependentSizedArrayTypeLoc dependent_sized_array_type_loc);
+      clang::DependentSizedArrayTypeLoc dependent_sized_array_type_loc,
+      bool traverse_qualifier = true);
 
   // Overridden to avoid mutating template argument expressions, which typically
   // (and perhaps always) need to be compile-time constants.

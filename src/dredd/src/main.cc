@@ -34,6 +34,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Signals.h"
@@ -243,12 +244,22 @@ int main(int argc, const char** argv) {
       command_line_options.get().getCompilations(),
       command_line_options.get().getSourcePathList());
 
+#if LLVM_VERSION_MAJOR >= 21
+  // From LLVM 21, DiagnosticOptions is not reference-counted and is passed by
+  // reference; it outlives the printer because both live until main returns.
+  clang::DiagnosticOptions diagnostic_options;
+  diagnostic_options.ShowColors = 1;
+  std::unique_ptr<clang::TextDiagnosticPrinter> text_diagnostic_printer =
+      std::make_unique<clang::TextDiagnosticPrinter>(llvm::errs(),
+                                                     diagnostic_options);
+#else
   const llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagnostic_options =
       new clang::DiagnosticOptions();
   diagnostic_options->ShowColors = 1;
   std::unique_ptr<clang::TextDiagnosticPrinter> text_diagnostic_printer =
       std::make_unique<clang::TextDiagnosticPrinter>(llvm::errs(),
                                                      &*diagnostic_options);
+#endif
   const clang::TextDiagnosticPrinter* text_diagnostic_printer_ptr =
       text_diagnostic_printer.get();
   std::unique_ptr<LogFailedFilesDiagnosticConsumer>
