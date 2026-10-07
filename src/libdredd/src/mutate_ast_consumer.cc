@@ -137,8 +137,14 @@ void MutateAstConsumer::HandleTranslationUnit(clang::ASTContext& ast_context) {
   }
 
   auto& source_manager = ast_context.getSourceManager();
-  const clang::SourceLocation start_of_source_file =
+  clang::SourceLocation start_of_source_file =
       source_manager.translateLineCol(source_manager.getMainFileID(), 1, 1);
+  // Keep a UTF-8 byte order mark at the start of the file: the prelude goes
+  // after it, otherwise compilers such as MSVC no longer detect the encoding.
+  if (source_manager.getBufferData(source_manager.getMainFileID())
+          .starts_with("\xEF\xBB\xBF")) {
+    start_of_source_file = start_of_source_file.getLocWithOffset(3);
+  }
   const clang::SourceLocation dredd_prelude_start_location =
       visitor_->HasDreddPreludeStartLocation()
           ? visitor_->GetDreddPreludeStartLocation()
