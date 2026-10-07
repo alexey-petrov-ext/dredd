@@ -1,0 +1,102 @@
+# Copyright 2026 The Dredd Project Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork-only, low-cost check of the patch branches on Linux: build against the
+# oldest supported LLVM (upstream's default) and the LLVM used for Windows
+# packages, then run the unit, single-file and execute tests.
+
+name: fork-linux
+
+on:
+  push:
+    branches:
+      - quindos
+      - 'upstream/**'
+  pull_request:
+    branches:
+      - quindos
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        llvm: ['17.0.6', '22.1.8']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libzstd-dev ccache
+
+      - name: Download LLVM ${{ matrix.llvm }}
+        run: |
+          major="${LLVM%%.*}"
+          if [ "$major" -ge 19 ]; then
+            name="LLVM-${LLVM}-Linux-X64"
+          else
+            name="clang+llvm-${LLVM}-x86_64-linux-gnu-ubuntu-22.04"
+          fi
+          mkdir -p "$RUNNER_TEMP/llvm"
+          curl -fsSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM}/${name}.tar.xz" \
+            | tar -xJ -C "$RUNNER_TEMP/llvm" --strip-components=1
+        env:
+          LLVM: ${{ matrix.llvm }}
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-${{ matrix.llvm }}-${{ github.sha }}
+          restore-keys: ccache-linux-${{ matrix.llvm }}-
+
+      - name: Build and run unit tests
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DDREDD_CLANG_LLVM_DIR="$RUNNER_TEMP/llvm"
+          cmake --build build
+          ./build/src/libdreddtest/libdreddtest
+
+      - name: Single-file and execute tests
+        run: |
+          # Dredd finds Clang's built-in headers relative to its executable.
+          cp build/src/dredd/dredd "$RUNNER_TEMP/llvm/bin/dredd"
+          python3 scripts/check_tests_with_compiler.py \
+            --dredd "$RUNNER_TEMP/llvm/bin/dredd" --style gnu \
+            --cc clang --cxx clang++ --cxx-std c++20 --c-std c17 \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Bespoke tests
+        run: |
+          export DREDD_REPO_ROOT="$PWD" DREDD_EXECUTABLE="$RUNNER_TEMP/llvm/bin/dredd"
+          export DREDD_CLANG_LLVM_DIR="$RUNNER_TEMP/llvm"
+          export PATH="$PATH:$PWD/scripts"
+          mkdir -p temp
+          ./scripts/check_bespoke_tests.sh
