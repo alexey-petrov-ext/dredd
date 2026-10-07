@@ -76,7 +76,7 @@ const char* const kDreddPreludeHeadersC =
 void MutateAstConsumer::HandleTranslationUnit(clang::ASTContext& ast_context) {
   const std::string filename =
       ast_context.getSourceManager()
-          .getFileEntryForID(ast_context.getSourceManager().getMainFileID())
+          .getFileEntryRefForID(ast_context.getSourceManager().getMainFileID())
           ->getName()
           .str();
 
@@ -130,7 +130,8 @@ void MutateAstConsumer::HandleTranslationUnit(clang::ASTContext& ast_context) {
   if (mutation_info_->has_value()) {
     mutation_info_for_file.set_filename(
         ast_context.getSourceManager()
-            .getFileEntryForID(ast_context.getSourceManager().getMainFileID())
+            .getFileEntryRefForID(
+                ast_context.getSourceManager().getMainFileID())
             ->getName()
             .str());
     *mutation_info_->value().add_info_for_files() = mutation_info_for_file;

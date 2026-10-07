@@ -301,11 +301,13 @@ bool MutateVisitor::TraverseCaseStmt(clang::CaseStmt* case_stmt) {
 }
 
 bool MutateVisitor::TraverseConstantArrayTypeLoc(
-    clang::ConstantArrayTypeLoc constant_array_type_loc) {
+    clang::ConstantArrayTypeLoc constant_array_type_loc,
+    bool traverse_qualifier) {
   // Prevent compilers complaining that this method could be made static, and
-  // that it ignores its parameter.
+  // that it ignores its parameters.
   (void)this;
   (void)constant_array_type_loc;
+  (void)traverse_qualifier;
   // Changing a constant-sized array to a non-constant-sized array is
   // problematic in C if the array has an initializer, and in C++ lambdas cannot
   // be used in array size expressions. For simplicity, don't try to mutate
@@ -314,21 +316,30 @@ bool MutateVisitor::TraverseConstantArrayTypeLoc(
 }
 
 bool MutateVisitor::TraverseVariableArrayTypeLoc(
-    clang::VariableArrayTypeLoc variable_array_type_loc) {
+    clang::VariableArrayTypeLoc variable_array_type_loc,
+    bool traverse_qualifier) {
   if (compiler_instance_->getLangOpts().CPlusPlus) {
     // In C++, lambdas cannot appear in array sizes, so avoid mutating here.
     return true;
   }
+#if LLVM_VERSION_MAJOR >= 22
+  return RecursiveASTVisitor::TraverseVariableArrayTypeLoc(
+      variable_array_type_loc, traverse_qualifier);
+#else
+  (void)traverse_qualifier;
   return RecursiveASTVisitor::TraverseVariableArrayTypeLoc(
       variable_array_type_loc);
+#endif
 }
 
 bool MutateVisitor::TraverseDependentSizedArrayTypeLoc(
-    clang::DependentSizedArrayTypeLoc dependent_sized_array_type_loc) {
+    clang::DependentSizedArrayTypeLoc dependent_sized_array_type_loc,
+    bool traverse_qualifier) {
   // Prevent compilers complaining that this method could be made static, and
-  // that it ignores its parameter.
+  // that it ignores its parameters.
   (void)this;
   (void)dependent_sized_array_type_loc;
+  (void)traverse_qualifier;
   // Changing an array whose size is derived from template parameters is
   // problematic because after template instantiation these lead to either
   // constant or variable-sized arrays, neither of which can be mutated in C++.

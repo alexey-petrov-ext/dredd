@@ -26,8 +26,10 @@ void LogFailedFilesDiagnosticConsumer::HandleDiagnostic(
       diag_level == clang::DiagnosticsEngine::Fatal) {
     auto file_id = info.getSourceManager().getMainFileID();
     if (file_id.isValid()) {
-      files_with_errors.insert(
-          info.getSourceManager().getFileEntryForID(file_id)->getName().str());
+      files_with_errors.insert(info.getSourceManager()
+                                   .getFileEntryRefForID(file_id)
+                                   ->getName()
+                                   .str());
     }
   }
 }

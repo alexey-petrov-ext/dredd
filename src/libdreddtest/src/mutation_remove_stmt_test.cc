@@ -29,7 +29,6 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Lex/Preprocessor.h"
-#include "clang/Rewrite/Core/RewriteBuffer.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Tooling/Tooling.h"
 #include "libdreddtest/gtest.h"
@@ -53,7 +52,7 @@ void TestRemoval(const std::string& original, const std::string& expected,
              0, mutation_id, rewriter, dredd_declarations);
   ASSERT_EQ(1, mutation_id);
   ASSERT_EQ(0, dredd_declarations.size());
-  const clang::RewriteBuffer* rewrite_buffer = rewriter.getRewriteBufferFor(
+  const auto* rewrite_buffer = rewriter.getRewriteBufferFor(
       ast_unit->getSourceManager().getMainFileID());
   const std::string rewritten_text(rewrite_buffer->begin(),
                                    rewrite_buffer->end());
