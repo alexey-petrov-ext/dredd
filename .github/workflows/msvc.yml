@@ -62,12 +62,12 @@ jobs:
         with:
           submodules: 'true'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Cache LLVM archive
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/llvm-archives
           key: llvm-${{ env.LLVM_VERSION }}-x86_64-pc-windows-msvc
@@ -96,7 +96,7 @@ jobs:
           scripts/msvc/package.ps1 -Version $version -LlvmDir "$env:RUNNER_TEMP\clang+llvm" -BuildDir build-msvc -OutDir dist
           Add-Content -Encoding ASCII $env:GITHUB_OUTPUT "name=dredd-$version-windows-x64"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.package.outputs.name }}
           path: |
@@ -123,7 +123,7 @@ jobs:
 
       - name: Upload suggested expectations
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: msvc-expectations-suggested
           path: dist/msvc_expectations.suggested.txt
@@ -136,7 +136,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: ${{ needs.build.outputs.package }}
           path: dist
