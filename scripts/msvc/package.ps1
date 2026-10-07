@@ -105,8 +105,11 @@ $zip = Join-Path $OutDir "$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 # bsdtar writes zip entries with forward slashes, unlike Compress-Archive in
 # Windows PowerShell 5.1.
+$ErrorActionPreference = 'Continue'
 & "$env:SystemRoot\System32\tar.exe" -a -c -f $zip -C $OutDir $name
-if ($LASTEXITCODE -ne 0) { throw "Creating $zip failed." }
+$tarExitCode = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($tarExitCode -ne 0) { throw "Creating $zip failed." }
 
 $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
 Set-Content -Encoding ASCII "$zip.sha256" "$hash  $name.zip"

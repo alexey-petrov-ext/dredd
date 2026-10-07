@@ -83,7 +83,7 @@ if (-not (Test-Path $llvmConfig)) {
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
   Write-Host "Unpacking $archive"
   # The tar.exe that ships with Windows (bsdtar) reads .tar.xz directly.
-  & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $staging
+  Invoke-Native "$env:SystemRoot\System32\tar.exe" @('-xf', $archive, '-C', $staging) -NoThrow
   if ($LASTEXITCODE -ne 0) {
     # Fall back to 7-Zip if this tar.exe was built without xz support.
     $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue

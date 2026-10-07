@@ -27,9 +27,9 @@ function Get-VsInstallPath {
   if (-not (Test-Path $vswhere)) {
     throw "vswhere.exe not found at '$vswhere'; is Visual Studio installed?"
   }
-  $path = & $vswhere -latest -products * -prerelease `
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-    -property installationPath
+  $path = Invoke-Native $vswhere @('-latest', '-products', '*', '-prerelease',
+    '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+    '-property', 'installationPath')
   if (-not $path) {
     throw 'No Visual Studio installation with the x64 C++ tools was found.'
   }
@@ -48,7 +48,7 @@ function Enter-VsDevEnv {
   $vcvarsall = Join-Path (Get-VsInstallPath) 'VC\Auxiliary\Build\vcvarsall.bat'
   $arguments = 'x64'
   if ($VcVarsVer) { $arguments += " -vcvars_ver=$VcVarsVer" }
-  $output = & cmd.exe /s /c "`"$vcvarsall`" $arguments >nul && set"
+  $output = Invoke-Native 'cmd.exe' @('/s', '/c', "`"$vcvarsall`" $arguments >nul && set") -NoThrow
   if ($LASTEXITCODE -ne 0) {
     throw "vcvarsall.bat $arguments failed (exit code $LASTEXITCODE)."
   }
@@ -77,12 +77,19 @@ function Get-DiaSdkLib {
 }
 
 function Invoke-Native {
-  # Runs a native command and throws if it fails.
+  # Runs a native command and throws if it fails, unless -NoThrow is given;
+  # the exit code is then left in $LASTEXITCODE. Use it for native commands
+  # in scripts that run with 'Stop': when the caller redirects the output,
+  # e.g. to a log file, Windows PowerShell 5.1 turns the first stderr line of
+  # a native command into a terminating error.
   param([Parameter(Mandatory = $true)][string]$Command,
-        [string[]]$Arguments = @())
+        [string[]]$Arguments = @(),
+        [switch]$NoThrow)
+  # Local to this function; the caller keeps its own preference.
+  $ErrorActionPreference = 'Continue'
   Write-Host "> $Command $($Arguments -join ' ')"
   & $Command @Arguments
-  if ($LASTEXITCODE -ne 0) {
+  if (-not $NoThrow -and $LASTEXITCODE -ne 0) {
     throw "'$Command' failed with exit code $LASTEXITCODE."
   }
 }
