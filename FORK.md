@@ -87,6 +87,8 @@ install is idempotent and needs no administrator rights.
   that are never instantiated unparsed, so Dredd would not mutate them.
 - Mutated files may trigger C4715 ("not all control paths return a value").
   If the project builds with `/WX`, compile mutants with `_CL_=/WX-`.
+- Mutated C files include `<stdatomic.h>`. Compile them with
+  `/experimental:c11atomics`, or MSVC stops with C1189.
 - Dredd rewrites files in place, and mutant IDs start from 0 in each Dredd
   run. Mutate a copy of the sources, and give all files of one build to one
   Dredd invocation.
