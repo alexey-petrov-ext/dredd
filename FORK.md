@@ -20,7 +20,7 @@ except the few fork-only files listed below.
 | `upstream/newer-llvm` | Build with LLVM 18–22 and keep LLVM 17; Linux CI job with LLVM 22. Recent MSVC STL releases reject Clang older than 19 (STL1000). | not opened |
 | `upstream/ms-compat-dependent-npc` | Fix a crash on value-dependent expressions (e.g. `sizeof(T)` in an instantiated template) with `-fms-compatibility`, the default for MSVC targets. | not opened |
 | `upstream/utf8-bom` | Keep a UTF-8 byte order mark at the start of the file; the prelude used to be inserted before it. | not opened |
-| `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. | not opened |
+| `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. Open it only after `upstream/ms-compat-dependent-npc` is merged: without that fix, Dredd crashes on `sizeof_template.cc` and `sizeof_template2.cc` in the Windows job. | not opened |
 
 ### Fork-only files
 
