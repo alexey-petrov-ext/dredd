@@ -18,4 +18,6 @@ set -e
 set -u
 set -x
 
-echo "17.0.6"
+# DREDD_LLVM_TAG selects another LLVM release, e.g. to test newer releases
+# in CI.
+echo "${DREDD_LLVM_TAG:-17.0.6}"

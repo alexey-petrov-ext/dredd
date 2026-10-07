@@ -44,10 +44,19 @@ case "$(uname)" in
   df -h
 
   # Install clang.
+  # From LLVM 19, the Linux release archives have a different name, and
+  # LLVMSupport links zstd statically.
+  DREDD_LLVM_MAJOR="${DREDD_LLVM_TAG%%.*}"
+  if [ "${DREDD_LLVM_MAJOR}" -ge 19 ]; then
+    DREDD_LLVM_ARCHIVE="LLVM-${DREDD_LLVM_TAG}-Linux-X64"
+    sudo apt-get install -y libzstd-dev
+  else
+    DREDD_LLVM_ARCHIVE="clang+llvm-${DREDD_LLVM_TAG}-x86_64-linux-gnu-ubuntu-22.04"
+  fi
   pushd ./third_party/clang+llvm
-    curl -fsSL -o clang+llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-${DREDD_LLVM_TAG}/clang+llvm-${DREDD_LLVM_TAG}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
+    curl -fsSL -o clang+llvm.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-${DREDD_LLVM_TAG}/${DREDD_LLVM_ARCHIVE}.tar.xz"
     tar xf clang+llvm.tar.xz
-    mv clang+llvm-${DREDD_LLVM_TAG}-x86_64-linux-gnu-ubuntu-22.04/* .
+    mv "${DREDD_LLVM_ARCHIVE}"/* .
     rm clang+llvm.tar.xz
   popd
   ;;
