@@ -85,6 +85,11 @@ function Invoke-Native {
   param([Parameter(Mandatory = $true)][string]$Command,
         [string[]]$Arguments = @(),
         [switch]$NoThrow)
+  # With 'Continue', a missing command would only print an error, and the
+  # check below would read the exit code of an earlier command.
+  if (-not (Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue)) {
+    throw "'$Command' was not found."
+  }
   # Local to this function; the caller keeps its own preference.
   $ErrorActionPreference = 'Continue'
   Write-Host "> $Command $($Arguments -join ' ')"
