@@ -1,0 +1,150 @@
+# Copyright 2026 The Dredd Project Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Windows end-to-end check with MSVC:
+#   - build Dredd with cl.exe against the official LLVM release for Windows;
+#   - run the unit tests;
+#   - package a portable zip (dredd.exe + Clang built-in headers + licenses);
+#   - run the single-file and execute tests with the packaged dredd.exe,
+#     compiling every mutated file with cl.exe.
+# On a tag, the zip is attached to a GitHub release.
+
+name: msvc
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      vcvars_ver:
+        description: 'MSVC toolset (e.g. 14.44); empty for the newest installed'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  LLVM_VERSION: '22.1.8'
+  # Language standards that the mutated code must compile with.
+  CXX_STD: 'c++17'
+  C_STD: 'c17'
+
+jobs:
+  build:
+    # Any image with Visual Studio 2022 or later works; the DIA SDK path in
+    # the LLVM package is repaired by scripts/msvc/Repair-LlvmDiaSdkPath.ps1.
+    runs-on: windows-2022
+    timeout-minutes: 150
+    outputs:
+      package: ${{ steps.package.outputs.name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache LLVM archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/llvm-archives
+          key: llvm-${{ env.LLVM_VERSION }}-x86_64-pc-windows-msvc
+
+      - name: Build and run unit tests
+        shell: pwsh
+        run: >
+          scripts/msvc/build.ps1
+          -LlvmVersion $env:LLVM_VERSION
+          -LlvmDir "$env:RUNNER_TEMP\clang+llvm"
+          -ArchiveCache "$env:RUNNER_TEMP\llvm-archives"
+          -BuildDir build-msvc
+          -VcVarsVer '${{ inputs.vcvars_ver }}'
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          . scripts/msvc/VsDevEnv.ps1
+          Enter-VsDevEnv -VcVarsVer '${{ inputs.vcvars_ver }}'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          } else {
+            $version = "0.0.0-dev.$env:GITHUB_RUN_NUMBER+g$((git rev-parse --short=10 HEAD).Trim())"
+          }
+          scripts/msvc/package.ps1 -Version $version -LlvmDir "$env:RUNNER_TEMP\clang+llvm" -BuildDir build-msvc -OutDir dist
+          Add-Content -Encoding ASCII $env:GITHUB_OUTPUT "name=dredd-$version-windows-x64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+
+      - name: End-to-end tests with cl.exe
+        shell: pwsh
+        run: |
+          . scripts/msvc/VsDevEnv.ps1
+          Enter-VsDevEnv -VcVarsVer '${{ inputs.vcvars_ver }}'
+          # -fno-delayed-template-parsing: Clang's default for MSVC targets
+          # leaves templates that are never instantiated unparsed, so Dredd
+          # would not mutate them.
+          python scripts/check_tests_with_compiler.py `
+            --dredd "${{ steps.package.outputs.dir }}\bin\dredd.exe" `
+            --style msvc --cxx-std $env:CXX_STD --c-std $env:C_STD `
+            --dredd-std --dredd-arg=-fno-delayed-template-parsing `
+            --expectations test/msvc_expectations.txt `
+            --suggest dist/msvc_expectations.suggested.txt `
+            --summary $env:GITHUB_STEP_SUMMARY
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload suggested expectations
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msvc-expectations-suggested
+          path: dist/msvc_expectations.suggested.txt
+          if-no-files-found: ignore
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.package }}
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Windows x64 build of Dredd ${GITHUB_REF_NAME} (LLVM ${LLVM_VERSION}, commit ${GITHUB_SHA}). Verify with the .sha256 file."
