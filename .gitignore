@@ -34,3 +34,8 @@ cmake-build-*
 *.exe
 *.out
 *.app
+
+# Windows build (scripts/msvc)
+/build-msvc/
+/dist/
+/third_party/clang+llvm-*-msvc/

@@ -84,7 +84,10 @@ class Compiler:
             if is_cxx:
                 cmd += ['/TP', '/EHsc', f'/std:{self.cxx_std}']
             else:
-                cmd += ['/TC', f'/std:{self.c_std}']
+                # Dredd's C prelude includes <stdatomic.h>, which MSVC
+                # supports only with this option.
+                cmd += ['/TC', f'/std:{self.c_std}',
+                        '/experimental:c11atomics']
         else:
             cmd = [self.cxx if is_cxx else self.cc,
                    f'-std={self.cxx_std if is_cxx else self.c_std}']
