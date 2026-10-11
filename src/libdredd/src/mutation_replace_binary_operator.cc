@@ -426,7 +426,7 @@ std::string MutationReplaceBinaryOperator::GenerateMutatorFunction(
 
   std::string arg1_evaluated("arg1");
   if (Arg1RequiresLambda(ast_context, options)) {
-    new_function << "std::function<" << lhs_type << "()>";
+    new_function << "__dredd_lazy<" << lhs_type << ">";
     arg1_evaluated += "()";
   } else {
     new_function << lhs_type;
@@ -439,7 +439,7 @@ std::string MutationReplaceBinaryOperator::GenerateMutatorFunction(
 
   std::string arg2_evaluated("arg2");
   if (Arg2RequiresLambda(ast_context, options)) {
-    new_function << "std::function<" << rhs_type << "()>";
+    new_function << "__dredd_lazy<" << rhs_type << ">";
     arg2_evaluated += "()";
   } else {
     new_function << rhs_type;

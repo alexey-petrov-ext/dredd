@@ -10,9 +10,26 @@
 #include <cstddef>
 #include <cstdlib>
 #include <fstream>
-#include <functional>
 #include <sstream>
 
+
+namespace {
+template <typename Result>
+class __dredd_lazy {
+ public:
+  template <typename Callable>
+  __dredd_lazy(const Callable& callable)
+      : callable_(&callable),
+        invoke_([](const void* target) -> Result {
+          return (*static_cast<const Callable*>(target))();
+        }) {}
+  Result operator()() const { return invoke_(callable_); }
+
+ private:
+  const void* callable_;
+  Result (*invoke_)(const void*);
+};
+}  // namespace
 
 #ifdef _MSC_VER
 #define thread_local __declspec(thread)
@@ -71,7 +88,7 @@ static unsigned long __dredd_replace_expr_unsigned_long_constant(unsigned long a
   return arg;
 }
 
-static unsigned int __dredd_replace_expr_unsigned_int(std::function<unsigned int()> arg, int local_mutation_id) {
+static unsigned int __dredd_replace_expr_unsigned_int(__dredd_lazy<unsigned int> arg, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return !(arg());
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return ~(arg());

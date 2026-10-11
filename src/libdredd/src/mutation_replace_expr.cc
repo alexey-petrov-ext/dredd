@@ -469,7 +469,7 @@ std::string MutationReplaceExpr::GenerateMutatorFunction(
   new_function << "static " << result_type << " " << function_name << "(";
   std::string arg_evaluated = "arg";
   if (ArgRequiresLambda(ast_context)) {
-    new_function << "std::function<" << input_type << "()>";
+    new_function << "__dredd_lazy<" << input_type << ">";
     arg_evaluated += "()";
   } else {
     new_function << input_type;

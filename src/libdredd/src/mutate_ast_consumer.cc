@@ -61,8 +61,31 @@ const char* const kDreddPreludeHeadersCpp =
     "#include <cstddef>\n"
     "#include <cstdlib>\n"
     "#include <fstream>\n"
-    "#include <functional>\n"
     "#include <sstream>\n\n";
+
+// A mutator function takes an operand that must be evaluated lazily, such as
+// the right operand of && or an operand with side effects, as a lambda. This
+// type refers to the lambda without owning it. That is safe, because the lambda
+// is a temporary of the full-expression that calls the mutator function. Unlike
+// std::function, it needs no function of the C++ standard library.
+const char* const kDreddPreludeLazyCpp =
+    "namespace {\n"
+    "template <typename Result>\n"
+    "class __dredd_lazy {\n"
+    " public:\n"
+    "  template <typename Callable>\n"
+    "  __dredd_lazy(const Callable& callable)\n"
+    "      : callable_(&callable),\n"
+    "        invoke_([](const void* target) -> Result {\n"
+    "          return (*static_cast<const Callable*>(target))();\n"
+    "        }) {}\n"
+    "  Result operator()() const { return invoke_(callable_); }\n"
+    "\n"
+    " private:\n"
+    "  const void* callable_;\n"
+    "  Result (*invoke_)(const void*);\n"
+    "};\n"
+    "}  // namespace\n\n";
 
 const char* const kDreddPreludeHeadersC =
     "#include <inttypes.h>\n"
@@ -272,6 +295,7 @@ std::string MutateAstConsumer::GetRegularDreddPreludeCpp(
   std::stringstream result;
   result << kDreddPreludeHeadersCpp;
   result << "\n";
+  result << kDreddPreludeLazyCpp;
 
   if (options_->GetEnablednessCheckingMode() ==
       Options::EnablednessCheckingMode::ALWAYS_READ_ENVIRONMENT_VARIABLE) {
@@ -407,6 +431,7 @@ std::string MutateAstConsumer::GetMutantTrackingDreddPreludeCpp(
   std::stringstream result;
   result << kDreddPreludeHeadersCpp;
   result << "\n";
+  result << kDreddPreludeLazyCpp;
   result << "static void __dredd_record_covered_mutants(int local_mutation_id, "
             "int num_mutations) {\n";
   result << "  static std::atomic<bool> already_recorded[" << num_mutations
