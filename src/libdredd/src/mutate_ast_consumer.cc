@@ -59,10 +59,10 @@ const char* const kDreddPreludeHeadersCpp =
     "#include <atomic>\n"
     "#include <cinttypes>\n"
     "#include <cstddef>\n"
+    "#include <cstdlib>\n"
     "#include <fstream>\n"
     "#include <functional>\n"
-    "#include <sstream>\n"
-    "#include <string>\n\n";
+    "#include <sstream>\n\n";
 
 const char* const kDreddPreludeHeadersC =
     "#include <inttypes.h>\n"
@@ -272,22 +272,25 @@ std::string MutateAstConsumer::GetRegularDreddPreludeCpp(
     result << "  const char* dredd_environment_variable = "
               "std::getenv(\"DREDD_ENABLED_MUTATION\");\n";
     result << "  if (dredd_environment_variable != nullptr) {\n";
-    result << "    std::string contents(dredd_environment_variable);\n";
-    result << "    while (true) {\n";
-    result << "      size_t pos = contents.find(\",\");\n";
-    result << "      std::string token = (pos == std::string::npos ? contents "
-              ": contents.substr(0, pos));\n";
-    result << "      if (!token.empty()) {\n";
-    result << "        int value = std::stoi(token);\n";
-    result << "        if (value - " << initial_mutation_id
-           << " == local_mutation_id) {\n";
-    result << "          return true;\n";
-    result << "        }\n";
+    result << "    const char* token = dredd_environment_variable;\n";
+    result << "    while (*token != '\\0') {\n";
+    result << "      if (*token == ',') {\n";
+    result << "        token++;\n";
+    result << "        continue;\n";
     result << "      }\n";
-    result << "      if (pos == std::string::npos) {\n";
-    result << "        break;\n";
+    result << "      char* end = nullptr;\n";
+    result << "      long value = std::strtol(token, &end, 10);\n";
+    result << "      if (end == token) {\n";
+    result << "        std::abort();\n";
     result << "      }\n";
-    result << "      contents.erase(0, pos + 1);\n";
+    result << "      if (value == local_mutation_id + " << initial_mutation_id
+           << ") {\n";
+    result << "        return true;\n";
+    result << "      }\n";
+    result << "      token = end;\n";
+    result << "      while (*token != ',' && *token != '\\0') {\n";
+    result << "        token++;\n";
+    result << "      }\n";
     result << "    }\n";
     result << "  }\n";
     result << "  return false;\n";
@@ -325,49 +328,50 @@ std::string MutateAstConsumer::GetRegularDreddPreludeCpp(
               "std::getenv(\"DREDD_ENABLED_MUTATION\");\n";
     result << "    if (dredd_environment_variable != nullptr) {\n";
     // The environment variable for mutations is set, so process the contents of
-    // this environment variable as a comma-seprated list of strings.
-    result << "      std::string contents(dredd_environment_variable);\n";
-    result << "      while (true) {\n";
-    // Find the position of the next comma.
-    result << "        size_t pos = contents.find(\",\");\n";
-    // The next token is either the whole string (if there is no comma) or the
-    // prefix before the next comma (if there is a comma).
-    result << "        std::string token = (pos == std::string::npos ? "
-              "contents : contents.substr(0, pos));\n";
-    // Ignore an empty token: this allows for a trailing comma at the end of the
+    // this environment variable as a comma-separated list of integers. The
+    // parsing uses only the C library, so that the mutated code does not need
+    // the C++ standard library.
+    result << "      const char* token = dredd_environment_variable;\n";
+    result << "      while (*token != '\\0') {\n";
+    // Skip an empty token: this allows for a trailing comma at the end of the
     // string.
-    result << "        if (!token.empty()) {\n";
-    // Parse the token as an integer. This will throw an exception if parsing
-    // fails, which is OK: it is expected that the user has set the environment
-    // variable to a legitimate value.
-    result << "          int value = std::stoi(token);\n";
-    result << "          int local_value = value - " << initial_mutation_id
-           << ";\n";
+    result << "        if (*token == ',') {\n";
+    result << "          token++;\n";
+    result << "          continue;\n";
+    result << "        }\n";
+    // Parse the token as an integer. The program stops if the token does not
+    // start with a number, which is OK: it is expected that the user has set
+    // the environment variable to a legitimate value.
+    result << "        char* end = nullptr;\n";
+    result << "        long value = std::strtol(token, &end, 10);\n";
+    result << "        if (end == token) {\n";
+    result << "          std::abort();\n";
+    result << "        }\n";
     // Check whether the mutant id actually corresponds to a mutant in this
     // file; skip it if it does not.
-    result << "          if (local_value >= 0 && local_value < "
-           << num_mutations << ") {\n";
+    result << "        if (value >= " << initial_mutation_id << " && value < "
+           << (initial_mutation_id + num_mutations) << ") {\n";
+    result << "          int local_value = static_cast<int>(value - "
+           << initial_mutation_id << ");\n";
     // `local_value / 64` gives the element in the bitset array corresponding to
     // this mutant. Then `local_value % 64` determines which bit of that element
     // needs to be set in order to enable the mutant, and a bitwise operation is
     // used to set the correct bit.
-    result << "            enabled_bitset[local_value / 64] |= "
+    result << "          enabled_bitset[local_value / 64] |= "
               "(static_cast<uint64_t>(1) << "
               "(local_value % 64));\n";
     if (options_->GetEnablednessCheckingMode() ==
         Options::EnablednessCheckingMode::STANDARD) {
       // Note that at least one enabled mutation has been encountered.
-      result << "            some_mutation_enabled = true;\n";
+      result << "          some_mutation_enabled = true;\n";
     }
-    result << "          }\n";
     result << "        }\n";
-    // If the end of the string has been reached, exit the parsing loop.
-    result << "        if (pos == std::string::npos) {\n";
-    result << "          break;\n";
+    // Skip the rest of the token, so that the next iteration starts at the
+    // next comma or at the end of the string.
+    result << "        token = end;\n";
+    result << "        while (*token != ',' && *token != '\\0') {\n";
+    result << "          token++;\n";
     result << "        }\n";
-    // Move past the first comma so that the rest of the string can be
-    // processed.
-    result << "        contents.erase(0, pos + 1);\n";
     result << "      }\n";
     result << "    }\n";
     // Initialisation is now complete, and whether at least one mutation is

@@ -8,10 +8,10 @@
 #include <atomic>
 #include <cinttypes>
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <sstream>
-#include <string>
 
 
 #ifdef _MSC_VER
@@ -28,22 +28,26 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
     bool some_mutation_enabled = false;
     const char* dredd_environment_variable = std::getenv("DREDD_ENABLED_MUTATION");
     if (dredd_environment_variable != nullptr) {
-      std::string contents(dredd_environment_variable);
-      while (true) {
-        size_t pos = contents.find(",");
-        std::string token = (pos == std::string::npos ? contents : contents.substr(0, pos));
-        if (!token.empty()) {
-          int value = std::stoi(token);
-          int local_value = value - 0;
-          if (local_value >= 0 && local_value < 1) {
-            enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
-            some_mutation_enabled = true;
-          }
+      const char* token = dredd_environment_variable;
+      while (*token != '\0') {
+        if (*token == ',') {
+          token++;
+          continue;
         }
-        if (pos == std::string::npos) {
-          break;
+        char* end = nullptr;
+        long value = std::strtol(token, &end, 10);
+        if (end == token) {
+          std::abort();
         }
-        contents.erase(0, pos + 1);
+        if (value >= 0 && value < 1) {
+          int local_value = static_cast<int>(value - 0);
+          enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
+          some_mutation_enabled = true;
+        }
+        token = end;
+        while (*token != ',' && *token != '\0') {
+          token++;
+        }
       }
     }
     initialized = true;
