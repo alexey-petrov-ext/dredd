@@ -135,7 +135,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAnd) {
 }
 )";
   const std::string expected_dredd_declaration_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 == arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1;
@@ -156,7 +156,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAnd) {
 }
 )";
   const std::string expected_dredd_declaration_no_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1 == arg2();
@@ -185,7 +185,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLOr) {
 }
 )";
   const std::string expected_dredd_declaration_opt =
-      R"(static bool __dredd_replace_binary_operator_LOr_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LOr_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 != arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1;
@@ -206,7 +206,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLOr) {
 }
 )";
   const std::string expected_dredd_declaration_no_opt =
-      R"(static bool __dredd_replace_binary_operator_LOr_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LOr_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1 == arg2();
@@ -791,7 +791,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithLhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(std::function<bool()> arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(__dredd_lazy<bool> arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1() && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1() == arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1();
@@ -812,7 +812,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithLhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_no_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(std::function<bool()> arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(__dredd_lazy<bool> arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1() && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1() || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1() == arg2();
@@ -841,7 +841,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithRhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 == arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1;
@@ -862,7 +862,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithRhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_no_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1 && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1 == arg2();
@@ -891,7 +891,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithLhsRhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(std::function<bool()> arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(__dredd_lazy<bool> arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1() && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1() == arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1();
@@ -912,7 +912,7 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithLhsRhsSideEffect) {
 }
 )";
   const std::string expected_dredd_declaration_no_opt =
-      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(std::function<bool()> arg1, std::function<bool()> arg2, int local_mutation_id) {
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(__dredd_lazy<bool> arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg1() && arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1() || arg2();
   if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1() == arg2();

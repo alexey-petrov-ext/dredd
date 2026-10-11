@@ -54,7 +54,7 @@ def main():
         ["python", QUERY_MUTANT_INFO_SCRIPT, "--largest-mutant-id", "info.json"]).stdout.decode('utf-8'))
 
     original = output_of(None)
-    assert original == '17'
+    assert original == '17 5'
     assert output_of('') == original
     # An id of no mutant of this file enables nothing.
     assert output_of(str(largest_mutant_id + 1)) == original
