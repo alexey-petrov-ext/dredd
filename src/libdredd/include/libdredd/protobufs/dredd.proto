@@ -23,6 +23,20 @@ message MutationInfoForFile {
   // A mutation tree is represented in a flat manner as a list of nodes.
   // Children of a given node are identified via indices into this list.
   repeated MutationTreeNode mutation_tree = 2;
+
+  // The mutants that a "Dredd disable" comment of the file holds. Each one is
+  // also a mutant of the mutation tree, because Dredd still applies it.
+  repeated IgnoredMutation ignored_mutations = 3;
+}
+
+message IgnoredMutation {
+  int32 mutation_id = 1;
+
+  // The reason that the comment gives, or empty.
+  string reason = 2;
+
+  // The location of the comment.
+  SourceLocation comment = 3;
 }
 
 message MutationTreeNode {

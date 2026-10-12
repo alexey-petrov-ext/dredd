@@ -87,6 +87,13 @@ void MutateAstConsumer::HandleTranslationUnit(clang::ASTContext& ast_context) {
     return;
   }
 
+  // An invalid "Dredd disable" directive is an error of the file, so the file
+  // is not mutated.
+  if (!ignore_scopes_.Collect(ast_context)) {
+    llvm::errs() << "Skipping due to errors\n";
+    return;
+  }
+
   if (options_->GetDumpAsts()) {
     llvm::errs() << "AST:\n";
     ast_context.getTranslationUnitDecl()->dump();
@@ -585,6 +592,8 @@ void MutateAstConsumer::ApplyMutations(
     if (build_tree && *mutation_id_ > mutation_id_old) {
       // Only add the result of applying the mutation if it had an effect.
       *protobufs_mutation_tree_node.add_mutation_groups() = mutation_group;
+      ignore_scopes_.AddIgnoredMutations(mutation_group,
+                                         protobufs_mutation_info_for_file);
     }
   }
 }

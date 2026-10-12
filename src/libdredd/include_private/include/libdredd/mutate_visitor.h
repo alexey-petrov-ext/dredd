@@ -36,6 +36,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "libdredd/ignore_comments.h"
 #include "libdredd/mutation.h"
 #include "libdredd/mutation_tree_node.h"
 #include "libdredd/options.h"
@@ -46,6 +47,12 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
  public:
   MutateVisitor(const clang::CompilerInstance& compiler_instance,
                 const Options& options);
+
+  // The visitor tells |ignore_scopes| of each node that it enters, so that a
+  // "Dredd disable once" directive gets the node after it as its scope.
+  void SetIgnoreScopes(IgnoreScopes* ignore_scopes) {
+    ignore_scopes_ = ignore_scopes;
+  }
 
   bool TraverseDecl(clang::Decl* decl);
 
@@ -248,8 +255,15 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   void SaveConstantTemplateArgumentForRewrite(
       const clang::TemplateSpecializationType* template_specialization_type);
 
+  // Gives the scope of a pending "Dredd disable once" directive when |range|
+  // starts at the token after it.
+  void NoteNodeForIgnoreScopes(clang::SourceRange range);
+
   const clang::CompilerInstance* compiler_instance_;
   const Options* options_;
+
+  // Not owned. Null when the visitor reads no directive.
+  IgnoreScopes* ignore_scopes_ = nullptr;
 
   // The begin location of a special function that can be written to indicate
   // where the Dredd prelude should be inserted. This is useful to cater for

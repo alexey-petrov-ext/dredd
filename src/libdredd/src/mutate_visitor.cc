@@ -114,6 +114,7 @@ bool MutateVisitor::TraverseDecl(clang::Decl* decl) {
     // consider it for mutation.
     return true;
   }
+  NoteNodeForIgnoreScopes(source_range_in_main_file);
   if (const auto* static_assert_decl =
           llvm::dyn_cast<clang::StaticAssertDecl>(decl)) {
     // It does not make sense to mutate static assertions, as (a) this will
@@ -211,6 +212,11 @@ bool MutateVisitor::TraverseVarDecl(clang::VarDecl* var_decl) {
 bool MutateVisitor::TraverseStmt(clang::Stmt* stmt) {
   if (stmt == nullptr) {
     return true;
+  }
+
+  if (ignore_scopes_ != nullptr && ignore_scopes_->HasPendingOnce()) {
+    NoteNodeForIgnoreScopes(
+        GetSourceRangeInMainFile(compiler_instance_->getPreprocessor(), *stmt));
   }
 
   // Do not mutate user defined literals.
@@ -727,6 +733,12 @@ bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
 
 void MutateVisitor::AddMutation(std::unique_ptr<Mutation> mutation) {
   mutation_tree_path_.back()->AddMutation(std::move(mutation));
+}
+
+void MutateVisitor::NoteNodeForIgnoreScopes(clang::SourceRange range) {
+  if (ignore_scopes_ != nullptr && ignore_scopes_->HasPendingOnce()) {
+    ignore_scopes_->NoteNode(range, compiler_instance_->getASTContext());
+  }
 }
 
 bool MutateVisitor::VisitVarDecl(clang::VarDecl* var_decl) {
