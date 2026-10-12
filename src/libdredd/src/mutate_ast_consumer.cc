@@ -63,6 +63,24 @@ const char* const kDreddPreludeHeadersCpp =
     "#include <fstream>\n"
     "#include <sstream>\n\n";
 
+// The mutant tracking prelude, like the regular prelude, calls no function of
+// the C++ standard library, so that a program that links without that library,
+// or with another variant of it, still links when it is mutated. It therefore
+// writes the tracking file with the C library.
+const char* const kDreddPreludeMutantTrackingHeadersCpp =
+    "#include <cinttypes>\n"
+    "#include <cstddef>\n"
+    "#include <cstdio>\n"
+    "#include <cstdlib>\n\n";
+
+const char* const kDreddPreludeThreadLocalCpp =
+    "#ifdef _MSC_VER\n"
+    "#define thread_local __declspec(thread)\n"
+    "#elif __APPLE__\n"
+    "#define thread_local __thread\n"
+    "#endif\n"
+    "\n";
+
 // A mutator function takes an operand that must be evaluated lazily, such as
 // the right operand of && or an operand with side effects, as a lambda. This
 // type refers to the lambda without owning it. That is safe, because the lambda
@@ -320,12 +338,7 @@ std::string MutateAstConsumer::GetRegularDreddPreludeCpp(
     result << "  return false;\n";
     result << "}\n";
   } else {
-    result << "#ifdef _MSC_VER\n";
-    result << "#define thread_local __declspec(thread)\n";
-    result << "#elif __APPLE__\n";
-    result << "#define thread_local __thread\n";
-    result << "#endif\n";
-    result << "\n";
+    result << kDreddPreludeThreadLocalCpp;
     if (options_->GetEnablednessCheckingMode() ==
         Options::EnablednessCheckingMode::STANDARD) {
       // This allows for fast checking that at least *some* mutation in the file
@@ -422,25 +435,35 @@ std::string MutateAstConsumer::GetMutantTrackingDreddPreludeCpp(
   const int num_mutations = *mutation_id_ - initial_mutation_id;
 
   std::stringstream result;
-  result << kDreddPreludeHeadersCpp;
+  result << kDreddPreludeMutantTrackingHeadersCpp;
   result << "\n";
   result << kDreddPreludeLazyCpp;
+  result << kDreddPreludeThreadLocalCpp;
   result << "static void __dredd_record_covered_mutants(int local_mutation_id, "
             "int num_mutations) {\n";
-  result << "  static std::atomic<bool> already_recorded[" << num_mutations
+  // Record the mutants of a mutation group at most once per thread. Plain flags
+  // need no library function, unlike std::atomic, which in a debug build of the
+  // Microsoft C++ standard library reports an invalid memory order through the
+  // debug C runtime. Another thread can record the same mutants again, which
+  // only repeats their lines in the file.
+  result << "  static thread_local bool already_recorded[" << num_mutations
          << "];\n";
-  result
-      << "  if (already_recorded[local_mutation_id].exchange(true)) return;\n";
+  result << "  if (already_recorded[local_mutation_id]) return;\n";
+  result << "  already_recorded[local_mutation_id] = true;\n";
   result << "  const char* dredd_tracking_environment_variable = "
             "std::getenv(\"DREDD_MUTANT_TRACKING_FILE\");\n";
   result << "  if (dredd_tracking_environment_variable == nullptr) return;\n";
-  result << "  std::ofstream output_file;\n";
-  result << "  output_file.open(dredd_tracking_environment_variable, "
-            "std::ios_base::app);\n";
+  // Append to the file with the C library, so that the mutated code does not
+  // need the C++ standard library. If the file cannot be opened, the mutants
+  // are not recorded.
+  result << "  std::FILE* output_file = "
+            "std::fopen(dredd_tracking_environment_variable, \"a\");\n";
+  result << "  if (output_file == nullptr) return;\n";
   result << "  for (int i = 0; i < num_mutations; i++) {\n";
-  result << "    output_file << (" << std::to_string(initial_mutation_id)
-         << " + local_mutation_id + i) << \"\\n\";\n";
+  result << R"(    std::fprintf(output_file, "%d\n", )" << initial_mutation_id
+         << " + local_mutation_id + i);\n";
   result << "  }\n";
+  result << "  std::fclose(output_file);\n";
   result << "}\n\n";
   return result.str();
 }
