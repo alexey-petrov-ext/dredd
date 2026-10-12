@@ -21,7 +21,7 @@ except the few fork-only files listed below.
 | `upstream/ms-compat-dependent-npc` | Fix a crash on value-dependent expressions (e.g. `sizeof(T)` in an instantiated template) with `-fms-compatibility`, the default for MSVC targets. | not opened |
 | `upstream/utf8-bom` | Keep a UTF-8 byte order mark at the start of the file; the prelude used to be inserted before it. | not opened |
 | `upstream/prelude-without-stl` | Mutated C++ code calls no function of the C++ standard library: the prelude reads `DREDD_ENABLED_MUTATION` with `std::strtol`, and mutator functions take lazy operands as a non-owning `__dredd_lazy<T>`, not `std::function`. A program that links another variant of that library, such as `/MTd` code with the release C runtime, then still links when mutated. | not opened |
-| `upstream/tracking-prelude-without-stl` (stacked on `upstream/prelude-without-stl`) | The C++ prelude of `--only-track-mutant-coverage` also calls no function of the C++ standard library: it appends to the tracking file with `std::fopen` and `std::fprintf`, and marks recorded mutants with plain thread-local flags, not `std::atomic<bool>`. The reach build of `/MTd` code that links the release C runtime then links too. | not opened |
+| `upstream/tracking-prelude-without-stl` (stacked on `upstream/prelude-without-stl`) | The C++ prelude of `--only-track-mutant-coverage` also calls no function of the C++ standard library: it appends to the tracking file with `std::fopen` and `std::fprintf`, and marks recorded mutants with the atomic exchange of a compiler intrinsic, not `std::atomic<bool>`. The reach build of `/MTd` code that links the release C runtime then links too. Both tracking preludes, C and C++, record each mutant once for each process, and serialize the appends with one spin lock for the whole program, so that threads do not overwrite each other's lines (the C runtime of Windows emulates append mode). | not opened |
 | `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. Open it only after `upstream/ms-compat-dependent-npc` is merged: without that fix, Dredd crashes on `sizeof_template.cc` and `sizeof_template2.cc` in the Windows job. | not opened |
 
 ### Fork-only files
@@ -91,8 +91,8 @@ install is idempotent and needs no administrator rights.
   that are never instantiated unparsed, so Dredd would not mutate them.
 - Mutated files may trigger C4715 ("not all control paths return a value").
   If the project builds with `/WX`, compile mutants with `_CL_=/WX-`.
-- Mutated C files include `<stdatomic.h>`. Compile them with
-  `/experimental:c11atomics`, or MSVC stops with C1189.
+- Mutated C files include `<stdatomic.h>`. Compile them with `/std:c11` (or
+  later) and `/experimental:c11atomics`, or MSVC stops with C1189.
 - Dredd rewrites files in place, and mutant IDs start from 0 in each Dredd
   run. Mutate a copy of the sources, and give all files of one build to one
   Dredd invocation.
