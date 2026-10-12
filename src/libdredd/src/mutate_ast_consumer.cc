@@ -73,6 +73,47 @@ const char* const kDreddPreludeMutantTrackingHeadersCpp =
     "#include <cstdio>\n"
     "#include <cstdlib>\n\n";
 
+// The C and C++ mutant tracking preludes synchronize the threads of a program
+// with this code. The atomic exchange is a compiler intrinsic, which calls no
+// library function. With MSVC, std::atomic and the C11 atomic operations both
+// check the memory order through the C runtime, and in a debug build through
+// the debug C runtime.
+//
+// A lock serializes the appends to the tracking file, because two threads that
+// append at the same time can overwrite each other's lines: the C runtime of
+// Windows emulates append mode by moving to the end of the file, then writing.
+// The lock is one variable for the whole program, so that all mutated files
+// use it, in C and in C++ alike. It has C linkage, so that C and C++
+// translation units name the same variable. Each translation unit defines it,
+// and the linker keeps one of the definitions: they are selectany, a COMDAT, in
+// the object files of Windows, and weak symbols elsewhere.
+const char* const kDreddPreludeMutantTrackingLock =
+    "#ifdef _MSC_VER\n"
+    "#include <intrin.h>\n"
+    "#endif\n"
+    "\n"
+    "static char __dredd_atomic_exchange(volatile char* target, char value) {\n"
+    "#ifdef _MSC_VER\n"
+    "  return _InterlockedExchange8(target, value);\n"
+    "#else\n"
+    "  return __atomic_exchange_n(target, value, __ATOMIC_SEQ_CST);\n"
+    "#endif\n"
+    "}\n"
+    "\n"
+    "#ifdef __cplusplus\n"
+    "extern \"C\" {\n"
+    "#endif\n"
+    "#ifdef _WIN32\n"
+    "__declspec(selectany)\n"
+    "#else\n"
+    "__attribute__((weak))\n"
+    "#endif\n"
+    "char __dredd_tracking_file_lock = 0;\n"
+    "#ifdef __cplusplus\n"
+    "}\n"
+    "#endif\n"
+    "\n";
+
 const char* const kDreddPreludeThreadLocalCpp =
     "#ifdef _MSC_VER\n"
     "#define thread_local __declspec(thread)\n"
@@ -438,32 +479,35 @@ std::string MutateAstConsumer::GetMutantTrackingDreddPreludeCpp(
   result << kDreddPreludeMutantTrackingHeadersCpp;
   result << "\n";
   result << kDreddPreludeLazyCpp;
-  result << kDreddPreludeThreadLocalCpp;
+  result << kDreddPreludeMutantTrackingLock;
   result << "static void __dredd_record_covered_mutants(int local_mutation_id, "
             "int num_mutations) {\n";
-  // Record the mutants of a mutation group at most once per thread. Plain flags
-  // need no library function, unlike std::atomic, which in a debug build of the
-  // Microsoft C++ standard library reports an invalid memory order through the
-  // debug C runtime. Another thread can record the same mutants again, which
-  // only repeats their lines in the file.
-  result << "  static thread_local bool already_recorded[" << num_mutations
-         << "];\n";
-  result << "  if (already_recorded[local_mutation_id]) return;\n";
-  result << "  already_recorded[local_mutation_id] = true;\n";
+  // Record the mutants of a mutation group once for each process: the thread
+  // that sets the flag of the group first appends the lines of the group, and
+  // no other thread does, so the file names each mutant that a run reaches
+  // once.
+  result << "  static char already_recorded[" << num_mutations << "];\n";
+  result << "  if (__dredd_atomic_exchange("
+            "&already_recorded[local_mutation_id], 1)) return;\n";
   result << "  const char* dredd_tracking_environment_variable = "
             "std::getenv(\"DREDD_MUTANT_TRACKING_FILE\");\n";
   result << "  if (dredd_tracking_environment_variable == nullptr) return;\n";
   // Append to the file with the C library, so that the mutated code does not
-  // need the C++ standard library. If the file cannot be opened, the mutants
-  // are not recorded.
+  // need the C++ standard library. The lock is held only while the file is
+  // open. If the file cannot be opened, the mutants are not recorded.
+  result << "  while (__dredd_atomic_exchange(&__dredd_tracking_file_lock, 1)) "
+            "{\n";
+  result << "  }\n";
   result << "  std::FILE* output_file = "
             "std::fopen(dredd_tracking_environment_variable, \"a\");\n";
-  result << "  if (output_file == nullptr) return;\n";
-  result << "  for (int i = 0; i < num_mutations; i++) {\n";
-  result << R"(    std::fprintf(output_file, "%d\n", )" << initial_mutation_id
+  result << "  if (output_file != nullptr) {\n";
+  result << "    for (int i = 0; i < num_mutations; i++) {\n";
+  result << R"(      std::fprintf(output_file, "%d\n", )" << initial_mutation_id
          << " + local_mutation_id + i);\n";
+  result << "    }\n";
+  result << "    std::fclose(output_file);\n";
   result << "  }\n";
-  result << "  std::fclose(output_file);\n";
+  result << "  __dredd_atomic_exchange(&__dredd_tracking_file_lock, 0);\n";
   result << "}\n\n";
   return result.str();
 }
@@ -583,20 +627,28 @@ std::string MutateAstConsumer::GetMutantTrackingDreddPreludeC(
   std::stringstream result;
   result << kDreddPreludeHeadersC;
   result << "\n";
+  result << kDreddPreludeMutantTrackingLock;
   result << "static void __dredd_record_covered_mutants(int local_mutation_id, "
             "int num_mutations) {\n";
-  result << "  static atomic_bool already_recorded[" << num_mutations << "];\n";
-  result << "  if (atomic_exchange(&already_recorded[local_mutation_id], 1)) "
-            "return;\n";
+  result << "  static char already_recorded[" << num_mutations << "];\n";
+  result << "  if (__dredd_atomic_exchange("
+            "&already_recorded[local_mutation_id], 1)) return;\n";
   result << "  const char* dredd_tracking_environment_variable = "
             "getenv(\"DREDD_MUTANT_TRACKING_FILE\");\n";
   result << "  if (!dredd_tracking_environment_variable) return;\n";
-  result << "  FILE* fp = fopen(dredd_tracking_environment_variable, \"a\");\n";
-  result << "  for (int i = 0; i < num_mutations; i++) {\n";
-  result << R"(    fprintf(fp, "%d\n", )" + std::to_string(initial_mutation_id)
-         << " + local_mutation_id + i);\n";
+  result << "  while (__dredd_atomic_exchange(&__dredd_tracking_file_lock, 1)) "
+            "{\n";
   result << "  }\n";
-  result << "  fclose(fp);\n";
+  result << "  FILE* fp = fopen(dredd_tracking_environment_variable, \"a\");\n";
+  result << "  if (fp) {\n";
+  result << "    for (int i = 0; i < num_mutations; i++) {\n";
+  result << R"(      fprintf(fp, "%d\n", )" +
+                std::to_string(initial_mutation_id)
+         << " + local_mutation_id + i);\n";
+  result << "    }\n";
+  result << "    fclose(fp);\n";
+  result << "  }\n";
+  result << "  __dredd_atomic_exchange(&__dredd_tracking_file_lock, 0);\n";
   result << "}\n\n";
   return result.str();
 }
