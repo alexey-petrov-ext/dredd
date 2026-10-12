@@ -26,6 +26,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+#include "libdredd/ignore_comments.h"
 #include "libdredd/mutate_visitor.h"
 #include "libdredd/mutation_tree_node.h"
 #include "libdredd/options.h"
@@ -42,7 +43,9 @@ class MutateAstConsumer : public clang::ASTConsumer {
         options_(&options),
         visitor_(std::make_unique<MutateVisitor>(compiler_instance, options)),
         mutation_id_(&mutation_id),
-        mutation_info_(&mutation_info) {}
+        mutation_info_(&mutation_info) {
+    visitor_->SetIgnoreScopes(&ignore_scopes_);
+  }
 
   void HandleTranslationUnit(clang::ASTContext& ast_context) override;
 
@@ -80,6 +83,9 @@ class MutateAstConsumer : public clang::ASTConsumer {
   const Options* options_;
 
   std::unique_ptr<MutateVisitor> visitor_;
+
+  // The scopes of the "Dredd disable" directives of the main file.
+  IgnoreScopes ignore_scopes_;
 
   clang::Rewriter rewriter_;
 

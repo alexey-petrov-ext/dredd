@@ -261,6 +261,30 @@ A typical workflow for using Dredd to determine which mutants are killed by a gi
 
     - If the test does kill the mutant, move the mutant from *unkilled* to *killed*.
 
+### Marking mutants as ignored with comments
+
+Some mutants cannot be killed by any test, for example because the mutated code only writes a trace, or because the mutant is equivalent to the original program.
+A line comment in the source file can mark such mutants as *ignored*, so that a mutation analysis script can leave them out:
+
+```
+// Dredd disable once replaceBinaryOperator: The sum only goes to a trace.
+int x = a + b;
+
+// Dredd disable all: No caller reads the trace.
+...
+// Dredd restore all
+```
+
+- `disable once` applies to the outermost statement or declaration that starts at the first token after the comment.
+- `disable` applies until a `restore` that names the same kinds or actions, or `restore all`, or the end of the file.
+- The comment names `all`, or a comma-separated list of mutation kinds (`removeStmt`, `replaceExpr`, `replaceBinaryOperator`, `replaceUnaryOperator`) and mutation actions (such as `ReplaceWithLHS`), as they appear in the mutation info file. Case does not matter.
+- A mutant is ignored only if its whole source range lies inside the scope of the comment.
+- The text after the colon is the reason, and it is optional.
+
+Dredd still applies an ignored mutant, so comments change neither the mutant IDs nor the mutated code.
+Each file of the mutation info file lists its ignored mutants under `ignoredMutations`, with the reason and the location of the comment.
+A comment that starts with `Dredd disable` or `Dredd restore` but names an unknown kind or action is a compile-time error for that file.
+
 ## Building Dredd from source
 
 The following instructions have been tested on Ubuntu 24.04.
