@@ -37,28 +37,28 @@
 namespace dredd {
 namespace {
 
-// The lower-case names of the mutation kinds and of the mutation actions, as
+// Whether |name|, in lower case, names a mutation kind or a mutation action, as
 // the mutation info file gives them.
-std::set<std::string> BuildKnownNames() {
-  std::set<std::string> result = {"removestmt", "replaceexpr",
-                                  "replacebinaryoperator",
-                                  "replaceunaryoperator"};
+bool IsKnownName(llvm::StringRef name) {
+  for (const llvm::StringRef kind :
+       {"removestmt", "replaceexpr", "replacebinaryoperator",
+        "replaceunaryoperator"}) {
+    if (name == kind) {
+      return true;
+    }
+  }
   for (const auto* descriptor :
        {protobufs::MutationReplaceExprAction_descriptor(),
         protobufs::MutationReplaceBinaryOperatorAction_descriptor(),
         protobufs::MutationReplaceUnaryOperatorAction_descriptor()}) {
     for (int index = 0; index < descriptor->value_count(); index++) {
-      result.insert(
-          llvm::StringRef(std::string(descriptor->value(index)->name()))
-              .lower());
+      if (name.equals_insensitive(
+              std::string(descriptor->value(index)->name()))) {
+        return true;
+      }
     }
   }
-  return result;
-}
-
-const std::set<std::string>& KnownNames() {
-  static const std::set<std::string> known_names = BuildKnownNames();
-  return known_names;
+  return false;
 }
 
 }  // namespace
@@ -120,7 +120,7 @@ std::optional<IgnoreDirective> ParseIgnoreDirective(llvm::StringRef comment,
       directive.all = true;
       continue;
     }
-    if (!KnownNames().contains(name)) {
+    if (!IsKnownName(name)) {
       error = "unknown mutation kind or action '" + part.str() +
               "' in a Dredd directive";
       return std::nullopt;
@@ -167,9 +167,8 @@ bool IgnoreScopes::Collect(clang::ASTContext& ast_context) {
       waiting.clear();
       continue;
     }
-    const llvm::StringRef text(
-        buffer.data() + source_manager.getFileOffset(location),
-        token.getLength());
+    const llvm::StringRef text = buffer.substr(
+        source_manager.getFileOffset(location), token.getLength());
     std::string error;
     const std::optional<IgnoreDirective> directive =
         ParseIgnoreDirective(text, error);
