@@ -21,6 +21,7 @@ except the few fork-only files listed below.
 | `upstream/ms-compat-dependent-npc` | Fix a crash on value-dependent expressions (e.g. `sizeof(T)` in an instantiated template) with `-fms-compatibility`, the default for MSVC targets. | not opened |
 | `upstream/utf8-bom` | Keep a UTF-8 byte order mark at the start of the file; the prelude used to be inserted before it. | not opened |
 | `upstream/prelude-without-stl` | Mutated C++ code calls no function of the C++ standard library: the prelude reads `DREDD_ENABLED_MUTATION` with `std::strtol`, and mutator functions take lazy operands as a non-owning `__dredd_lazy<T>`, not `std::function`. A program that links another variant of that library, such as `/MTd` code with the release C runtime, then still links when mutated. | not opened |
+| `upstream/tracking-prelude-without-stl` (stacked on `upstream/prelude-without-stl`) | The C++ prelude of `--only-track-mutant-coverage` also calls no function of the C++ standard library: it appends to the tracking file with `std::fopen` and `std::fprintf`, and marks recorded mutants with plain thread-local flags, not `std::atomic<bool>`. The reach build of `/MTd` code that links the release C runtime then links too. | not opened |
 | `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. Open it only after `upstream/ms-compat-dependent-npc` is merged: without that fix, Dredd crashes on `sizeof_template.cc` and `sizeof_template2.cc` in the Windows job. | not opened |
 
 ### Fork-only files
@@ -40,10 +41,12 @@ git remote add upstream https://github.com/mc-imperial/dredd.git   # once
 git fetch upstream
 old_main=$(git rev-parse main)
 old_newer_llvm=$(git rev-parse upstream/newer-llvm)
+old_prelude_without_stl=$(git rev-parse upstream/prelude-without-stl)
 git checkout main && git merge --ff-only upstream/main
 for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl; do
   git rebase main "$b"
 done
+git rebase --onto upstream/prelude-without-stl "$old_prelude_without_stl" upstream/tracking-prelude-without-stl
 git rebase --onto upstream/newer-llvm "$old_newer_llvm" upstream/msvc-ci
 git rebase --onto main "$old_main" quindos   # replays topic commits + fork-only commits
 git push --force-with-lease origin main 'upstream/*' quindos
