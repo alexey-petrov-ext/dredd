@@ -23,6 +23,7 @@ except the few fork-only files listed below.
 | `upstream/prelude-without-stl` | Mutated C++ code calls no function of the C++ standard library: the prelude reads `DREDD_ENABLED_MUTATION` with `std::strtol`, and mutator functions take lazy operands as a non-owning `__dredd_lazy<T>`, not `std::function`. A program that links another variant of that library, such as `/MTd` code with the release C runtime, then still links when mutated. | not opened |
 | `upstream/tracking-prelude-without-stl` (stacked on `upstream/prelude-without-stl`) | The C++ prelude of `--only-track-mutant-coverage` also calls no function of the C++ standard library: it appends to the tracking file with `std::fopen` and `std::fprintf`, and marks recorded mutants with the atomic exchange of a compiler intrinsic, not `std::atomic<bool>`. The reach build of `/MTd` code that links the release C runtime then links too. Both tracking preludes, C and C++, record each mutant once for each process, and serialize the appends with one spin lock for the whole program, so that threads do not overwrite each other's lines (the C runtime of Windows emulates append mode). | not opened |
 | `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. Open it only after `upstream/ms-compat-dependent-npc` is merged: without that fix, Dredd crashes on `sizeof_template.cc` and `sizeof_template2.cc` in the Windows job. | not opened |
+| `upstream/ignore-comments` | A line comment `// Dredd disable once <names>: <reason>`, or a `disable` … `restore` block, marks mutants as ignored, so that a mutation analysis script can leave out a mutant that no test can kill. The mutation info file lists them under `ignoredMutations`. Dredd still applies them, so the comments change neither the mutant IDs nor the mutated code. | not opened |
 
 ### Fork-only files
 
@@ -43,7 +44,7 @@ old_main=$(git rev-parse main)
 old_newer_llvm=$(git rev-parse upstream/newer-llvm)
 old_prelude_without_stl=$(git rev-parse upstream/prelude-without-stl)
 git checkout main && git merge --ff-only upstream/main
-for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl; do
+for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments; do
   git rebase main "$b"
 done
 git rebase --onto upstream/prelude-without-stl "$old_prelude_without_stl" upstream/tracking-prelude-without-stl
