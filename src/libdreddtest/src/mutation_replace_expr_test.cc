@@ -77,6 +77,45 @@ void TestReplacement(const std::string& original, const std::string& expected,
   ASSERT_EQ(expected, rewritten_text);
 }
 
+// Parses |original| with Microsoft extensions, which provide __super, for the
+// same target on each host. Applies the mutation of each expression that
+// |matcher| binds to "expr", the inner expressions first, as Dredd applies
+// them. Then checks the number of mutants and the rewritten text.
+void TestReplacementWithMicrosoftExtensions(
+    const std::string& original, const std::string& expected,
+    int num_replacements,
+    const clang::ast_matchers::StatementMatcher& matcher) {
+  auto ast_unit = clang::tooling::buildASTFromCodeWithArgs(
+      original, {"-w", "--target=x86_64-unknown-linux-gnu", "-fms-extensions"});
+  ASSERT_FALSE(ast_unit->getDiagnostics().hasErrorOccurred());
+  auto expressions =
+      clang::ast_matchers::match(matcher, ast_unit->getASTContext());
+  ASSERT_FALSE(expressions.empty());
+
+  clang::Rewriter rewriter(ast_unit->getSourceManager(),
+                           ast_unit->getLangOpts());
+  int mutation_id = 0;
+  std::unordered_set<std::string> dredd_declarations;
+  // The matcher finds an enclosing expression before the expressions in it.
+  for (auto expression = expressions.rbegin(); expression != expressions.rend();
+       ++expression) {
+    const MutationReplaceExpr mutation(
+        *expression->getNodeAs<clang::Expr>("expr"),
+        ast_unit->getPreprocessor(), ast_unit->getASTContext());
+    mutation.Apply(ast_unit->getASTContext(), ast_unit->getPreprocessor(),
+                   Options(), 0, mutation_id, rewriter, dredd_declarations);
+  }
+  ASSERT_EQ(num_replacements, mutation_id);
+
+  const auto* rewrite_buffer = rewriter.getRewriteBufferFor(
+      ast_unit->getSourceManager().getMainFileID());
+  const std::string rewritten_text =
+      rewrite_buffer == nullptr
+          ? original
+          : std::string(rewrite_buffer->begin(), rewrite_buffer->end());
+  ASSERT_EQ(expected, rewritten_text);
+}
+
 TEST(MutationReplaceExprTest, MutateSignedConstants) {
   const std::string original = "void foo() { 2; }";
   const std::string expected =
@@ -260,6 +299,82 @@ bool foo(bool a, bool b) {
   const int kNumReplacements = 1;
   TestReplacement(original, expected, kNumReplacements,
                   expected_dredd_declaration, 0);
+}
+
+TEST(MutationReplaceExprTest, MutateCallThroughSuper) {
+  // A lambda has no base class, so the lambda names the class of the member in
+  // place of __super.
+  const std::string original = R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  void foo() { bool valid = __super::Ok(); }
+};
+)";
+  const std::string expected = R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::Base::Ok()); }, 0); }
+};
+)";
+  const int kNumReplacements = 3;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::cxxMemberCallExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, MutateCallThroughSuperToTemplateBase) {
+  const std::string original = R"(namespace ns {
+template <typename T> struct Base { bool Ok(); };
+}
+struct Derived : ns::Base<int> {
+  void foo() { bool valid = __super::Ok(); }
+};
+)";
+  const std::string expected = R"(namespace ns {
+template <typename T> struct Base { bool Ok(); };
+}
+struct Derived : ns::Base<int> {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::Base<int>::Ok()); }, 0); }
+};
+)";
+  const int kNumReplacements = 3;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::cxxMemberCallExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, MutateCallThroughSuperInTwoLambdas) {
+  // Both lambdas hold the one __super, which is replaced once.
+  const std::string original = R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  bool foo() { return !__super::Ok(); }
+};
+)";
+  const std::string expected = R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  bool foo() { return __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(!__dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::Base::Ok()); }, 0)); }, 3); }
+};
+)";
+  const int kNumReplacements = 6;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::expr(
+          clang::ast_matchers::anyOf(
+              clang::ast_matchers::cxxMemberCallExpr(),
+              clang::ast_matchers::unaryOperator(
+                  clang::ast_matchers::hasOperatorName("!"))))
+          .bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, DoNotMutateSuperOfDependentBase) {
+  // The base class of __super is only known in an instantiation, so the
+  // expression is not put into a lambda.
+  const std::string original = R"(template <typename T> struct Derived : T {
+  bool foo() { return static_cast<bool>(__super::Ok()); }
+};
+)";
+  const int kNumReplacements = 0;
+  TestReplacementWithMicrosoftExtensions(
+      original, original, kNumReplacements,
+      clang::ast_matchers::cxxStaticCastExpr().bind("expr"));
 }
 
 }  // namespace

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cassert>
 #include <initializer_list>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -492,6 +493,28 @@ protobufs::MutationGroup MutationReplaceBinaryOperator::Apply(
     const Options& options, int first_mutation_id_in_file, int& mutation_id,
     clang::Rewriter& rewriter,
     std::unordered_set<std::string>& dredd_declarations) const {
+  std::vector<const clang::Expr*> operands_in_lambdas;
+  if (Arg1RequiresLambda(ast_context, options)) {
+    operands_in_lambdas.push_back(binary_operator_->getLHS());
+  }
+  if (Arg2RequiresLambda(ast_context, options)) {
+    operands_in_lambdas.push_back(binary_operator_->getRHS());
+  }
+  std::vector<SuperQualifierReplacement> super_qualifier_replacements;
+  for (const auto* operand : operands_in_lambdas) {
+    std::optional<std::vector<SuperQualifierReplacement>> replacements =
+        GetSuperQualifierReplacements(*operand, ast_context);
+    if (!replacements.has_value()) {
+      // The operand would go into a lambda, where a __super in it cannot be
+      // resolved, and that __super cannot be replaced with its class. Leave
+      // the operator alone.
+      return {};
+    }
+    super_qualifier_replacements.insert(super_qualifier_replacements.end(),
+                                        replacements->begin(),
+                                        replacements->end());
+  }
+
   // The protobuf object for the mutation, which will be wrapped in a
   // MutationGroup.
   protobufs::MutationReplaceBinaryOperator inner_result;
@@ -575,6 +598,7 @@ protobufs::MutationGroup MutationReplaceBinaryOperator::Apply(
   ReplaceOperator(lhs_type, rhs_type, new_function_name, ast_context,
                   preprocessor, first_mutation_id_in_file, mutation_id, options,
                   rewriter);
+  ReplaceSuperQualifiers(super_qualifier_replacements, rewriter);
 
   const std::string new_function = GenerateMutatorFunction(
       ast_context, new_function_name, result_type, lhs_type, rhs_type, options,

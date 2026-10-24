@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
@@ -39,8 +40,9 @@ namespace {
 void TestReplacement(const std::string& original, const std::string& expected,
                      int num_replacements,
                      const Options::Optimisations& optimisations,
-                     const std::string& expected_dredd_declaration) {
-  auto ast_unit = clang::tooling::buildASTFromCodeWithArgs(original, {"-w"});
+                     const std::string& expected_dredd_declaration,
+                     const std::vector<std::string>& args = {"-w"}) {
+  auto ast_unit = clang::tooling::buildASTFromCodeWithArgs(original, args);
   ASSERT_FALSE(ast_unit->getDiagnostics().hasErrorOccurred());
   auto function_decl = clang::ast_matchers::match(
       clang::ast_matchers::functionDecl(clang::ast_matchers::hasName("foo"))
@@ -928,6 +930,37 @@ TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithLhsRhsSideEffect) {
   TestReplacement(original, expected_no_opt, kNumReplacementsNoOpt,
                   Options::Optimisations::AllDisabled(),
                   expected_dredd_declaration_no_opt);
+}
+
+TEST(MutationReplaceBinaryOperatorTest, MutateLAndWithSuperInRhs) {
+  // A lambda has no base class, so the lambda of the right operand names the
+  // class of the member in place of __super.
+  const std::string original = R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  bool foo(bool flag) { return flag && __super::Ok(); }
+};
+)";
+  const std::string expected =
+      R"(struct Base { bool Ok(); };
+struct Derived : Base {
+  bool foo(bool flag) { return __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(flag , [&]() -> bool { return static_cast<bool>(::Base::Ok()); }, 0); }
+};
+)";
+  const std::string expected_dredd_declaration =
+      R"(static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, __dredd_lazy<bool> arg2, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg1 && arg2();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 == arg2();
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1;
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return arg2();
+  return arg1 && arg2();
+}
+
+)";
+  const int kNumReplacements = 3;
+  TestReplacement(
+      original, expected, kNumReplacements,
+      Options::Optimisations::AllEnabled(), expected_dredd_declaration,
+      {"-w", "--target=x86_64-unknown-linux-gnu", "-fms-extensions"});
 }
 
 }  // namespace
