@@ -22,6 +22,11 @@ golden-diff test/single_file/add_type_aliases.cc noopt
 golden-diff test/single_file/initializer_list.cc
 golden-diff test/single_file/vector_returns_temporary.cc
 
+# The test input holds its __super code under #ifdef _MSC_VER, because only
+# Microsoft extensions have __super. The golden files come from Linux, where
+# that code is left out and Dredd mutates nothing; MSVC targets mutate it.
+golden-diff test/single_file/super_in_lazy_operand.cc
+
 # The test inputs use variable-length arrays, which MSVC does not support.
 compile-fail test/single_file/non_const_sized_array.c
 compile-fail test/single_file/non_const_sized_array.cc
