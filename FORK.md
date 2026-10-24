@@ -24,6 +24,9 @@ except the few fork-only files listed below.
 | `upstream/tracking-prelude-without-stl` (stacked on `upstream/prelude-without-stl`) | The C++ prelude of `--only-track-mutant-coverage` also calls no function of the C++ standard library: it appends to the tracking file with `std::fopen` and `std::fprintf`, and marks recorded mutants with the atomic exchange of a compiler intrinsic, not `std::atomic<bool>`. The reach build of `/MTd` code that links the release C runtime then links too. Both tracking preludes, C and C++, record each mutant once for each process, and serialize the appends with one spin lock for the whole program, so that threads do not overwrite each other's lines (the C runtime of Windows emulates append mode). | not opened |
 | `upstream/msvc-ci` (stacked on `upstream/newer-llvm`) | Windows CI with MSVC: build against the official LLVM release, package a portable zip, run the single-file and execute tests and compile every mutated file with `cl.exe`. Includes a cross-platform test runner. See upstream issue #164. Open it only after `upstream/ms-compat-dependent-npc` is merged: without that fix, Dredd crashes on `sizeof_template.cc` and `sizeof_template2.cc` in the Windows job. | not opened |
 | `upstream/ignore-comments` | A line comment `// Dredd disable once <names>: <reason>`, or a `disable` … `restore` block, marks mutants as ignored, so that a mutation analysis script can leave out a mutant that no test can kill. The mutation info file lists them under `ignoredMutations`. Dredd still applies them, so the comments change neither the mutant IDs nor the mutated code. | not opened |
+| `upstream/prelude-thread-local-keyword` (stacked on `upstream/tracking-prelude-without-stl`) | The mutant prelude no longer defines the keyword `thread_local` as a macro (`__declspec(thread)` for MSVC, `__thread` for Apple): its own variables use a macro of its own, `__dredd_thread_local`. A local `thread_local` variable of the mutated code then keeps the keyword, and MSVC no longer rejects it with C2480. | not opened |
+| `upstream/adjacent-statements` | When a removed statement ends where the next statement starts (no white space after a `;`, a comment or the brace of a compound statement, as in `x = 1;y = 2;`), the closing brace of the removal goes before the text that opens the mutants of the next statement. The mutant build of such code used to nest the two in the wrong order, and MSVC stopped with C2143 and C2660. | not opened |
+| `upstream/super-in-lazy-operand` (stacked on `upstream/tracking-prelude-without-stl`) | An operand that Dredd evaluates lazily, in a lambda, names the base class in place of a `__super` qualifier (`::Base::f()` for `__super::f()`): a lambda has no base class, so MSVC stopped with C2791. When the class cannot be named so, for example a dependent base, Dredd does not mutate that expression or operator. | not opened |
 
 ### Fork-only files
 
@@ -43,11 +46,15 @@ git fetch upstream
 old_main=$(git rev-parse main)
 old_newer_llvm=$(git rev-parse upstream/newer-llvm)
 old_prelude_without_stl=$(git rev-parse upstream/prelude-without-stl)
+old_tracking_prelude_without_stl=$(git rev-parse upstream/tracking-prelude-without-stl)
 git checkout main && git merge --ff-only upstream/main
-for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments; do
+for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments upstream/adjacent-statements; do
   git rebase main "$b"
 done
 git rebase --onto upstream/prelude-without-stl "$old_prelude_without_stl" upstream/tracking-prelude-without-stl
+for b in upstream/prelude-thread-local-keyword upstream/super-in-lazy-operand; do
+  git rebase --onto upstream/tracking-prelude-without-stl "$old_tracking_prelude_without_stl" "$b"
+done
 git rebase --onto upstream/newer-llvm "$old_newer_llvm" upstream/msvc-ci
 git rebase --onto main "$old_main" quindos   # replays topic commits + fork-only commits
 git push --force-with-lease origin main 'upstream/*' quindos
