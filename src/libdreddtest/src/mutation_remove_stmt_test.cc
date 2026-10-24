@@ -207,5 +207,81 @@ void foo() { int x; if (!__dredd_enabled_mutation(0)) { ASSIGN(x, 1); } })";
   TestRemoval(original, expected, mutation_supplier);
 }
 
+// Applies to one rewriter the removal of the statement that |first_matcher|
+// matches, and then the removal of the statement that |second_matcher| matches,
+// as Dredd applies the removals of two adjacent statements of a block.
+void TestAdjacentRemovals(
+    const std::string& original, const std::string& expected,
+    const clang::ast_matchers::StatementMatcher& first_matcher,
+    const clang::ast_matchers::StatementMatcher& second_matcher) {
+  auto ast_unit = clang::tooling::buildASTFromCodeWithArgs(original, {"-w"});
+  ASSERT_FALSE(ast_unit->getDiagnostics().hasErrorOccurred());
+  clang::Rewriter rewriter(ast_unit->getSourceManager(),
+                           ast_unit->getLangOpts());
+  int mutation_id = 0;
+  std::unordered_set<std::string> dredd_declarations;
+  const auto apply_removal =
+      [&](const clang::ast_matchers::StatementMatcher& matcher) -> void {
+    auto statement = clang::ast_matchers::match(
+        clang::ast_matchers::stmt(matcher).bind("stmt"),
+        ast_unit->getASTContext());
+    ASSERT_EQ(1, statement.size());
+    MutationRemoveStmt(*statement[0].getNodeAs<clang::Stmt>("stmt"),
+                       ast_unit->getPreprocessor(), ast_unit->getASTContext())
+        .Apply(ast_unit->getASTContext(), ast_unit->getPreprocessor(),
+               Options(), 0, mutation_id, rewriter, dredd_declarations);
+  };
+  apply_removal(first_matcher);
+  apply_removal(second_matcher);
+  ASSERT_EQ(2, mutation_id);
+  const auto* rewrite_buffer = rewriter.getRewriteBufferFor(
+      ast_unit->getSourceManager().getMainFileID());
+  const std::string rewritten_text(rewrite_buffer->begin(),
+                                   rewrite_buffer->end());
+  ASSERT_EQ(expected, rewritten_text);
+}
+
+TEST(MutationRemoveStmtTest, RemoveStatementAfterSemi) {
+  const std::string original = "void foo() { int x; x = 1;x = 2; }";
+  const std::string expected =
+      R"(void foo() { int x; if (!__dredd_enabled_mutation(0)) { x = 1; }if (!__dredd_enabled_mutation(1)) { x = 2; } })";
+  TestAdjacentRemovals(
+      original, expected,
+      clang::ast_matchers::binaryOperator(clang::ast_matchers::hasRHS(
+          clang::ast_matchers::integerLiteral(clang::ast_matchers::equals(1)))),
+      clang::ast_matchers::binaryOperator(
+          clang::ast_matchers::hasRHS(clang::ast_matchers::integerLiteral(
+              clang::ast_matchers::equals(2)))));
+}
+
+TEST(MutationRemoveStmtTest, RemoveStatementAfterElseWithoutBraces) {
+  const std::string original =
+      "void foo(int x) { if (x) x = 1; else x = 2;x = 3; }";
+  const std::string expected =
+      R"(void foo(int x) { if (!__dredd_enabled_mutation(0)) { if (x) x = 1; else x = 2; }if (!__dredd_enabled_mutation(1)) { x = 3; } })";
+  TestAdjacentRemovals(
+      original, expected, clang::ast_matchers::ifStmt(),
+      clang::ast_matchers::binaryOperator(
+          clang::ast_matchers::hasRHS(clang::ast_matchers::integerLiteral(
+              clang::ast_matchers::equals(3)))));
+}
+
+TEST(MutationRemoveStmtTest, RemoveStatementAfterBrace) {
+  const std::string original = "void foo() { if (true) { }return; }";
+  const std::string expected =
+      R"(void foo() { if (!__dredd_enabled_mutation(0)) { if (true) { } }if (!__dredd_enabled_mutation(1)) { return; } })";
+  TestAdjacentRemovals(original, expected, clang::ast_matchers::ifStmt(),
+                       clang::ast_matchers::returnStmt());
+}
+
+TEST(MutationRemoveStmtTest, RemoveStatementAfterComment) {
+  const std::string original = "void foo() { if (true) { }/* c */return; }";
+  const std::string expected =
+      "void foo() { if (!__dredd_enabled_mutation(0)) { if (true) { }/* c */\n"
+      " }if (!__dredd_enabled_mutation(1)) { return; } }";
+  TestAdjacentRemovals(original, expected, clang::ast_matchers::ifStmt(),
+                       clang::ast_matchers::returnStmt());
+}
+
 }  // namespace
 }  // namespace dredd
