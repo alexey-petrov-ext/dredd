@@ -336,10 +336,16 @@ bool IsTemplateArgumentNameableFromGlobalScope(
       // is not from the global scope.
       return !argument.getIntegralType()->isEnumeralType();
     case clang::TemplateArgument::Template: {
+#if LLVM_VERSION_MAJOR >= 22
       const clang::TemplateDecl* template_decl =
           argument.getAsTemplate().getAsTemplateDecl();
       return template_decl != nullptr &&
              IsNameableFromGlobalScope(*template_decl);
+#else
+      // Before LLVM 22, the name of a template argument that is a template has
+      // no `::` in front of it, so it can name another template.
+      return false;
+#endif
     }
     default:
       return false;
