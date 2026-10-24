@@ -350,7 +350,8 @@ bool IsTemplateArgumentNameableFromGlobalScope(
 // an enumeration or a template. The name holds the template arguments of each
 // specialization in it, and none of them may be a type without such a name.
 // An unnamed namespace has no name either: `::Base` would name a class in the
-// enclosing namespace, or no class at all.
+// enclosing namespace, or no class at all. The same holds for an inline
+// namespace, which the name leaves out.
 bool IsNameableFromGlobalScope(const clang::NamedDecl& decl) {
   if (decl.getIdentifier() == nullptr) {
     return false;
@@ -367,7 +368,8 @@ bool IsNameableFromGlobalScope(const clang::NamedDecl& decl) {
        !context->isTranslationUnit(); context = context->getParent()) {
     if (const auto* namespace_decl =
             llvm::dyn_cast<clang::NamespaceDecl>(context)) {
-      if (namespace_decl->isAnonymousNamespace()) {
+      if (namespace_decl->isAnonymousNamespace() ||
+          namespace_decl->isInline()) {
         return false;
       }
       continue;
