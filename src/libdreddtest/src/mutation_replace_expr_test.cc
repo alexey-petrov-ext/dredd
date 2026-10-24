@@ -33,6 +33,7 @@
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Tooling/Tooling.h"
 #include "libdreddtest/gtest.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace dredd {
@@ -96,11 +97,10 @@ void TestReplacementWithMicrosoftExtensions(
   int mutation_id = 0;
   std::unordered_set<std::string> dredd_declarations;
   // The matcher finds an enclosing expression before the expressions in it.
-  for (auto expression = expressions.rbegin(); expression != expressions.rend();
-       ++expression) {
+  for (const auto& expression : llvm::reverse(expressions)) {
     const MutationReplaceExpr mutation(
-        *expression->getNodeAs<clang::Expr>("expr"),
-        ast_unit->getPreprocessor(), ast_unit->getASTContext());
+        *expression.getNodeAs<clang::Expr>("expr"), ast_unit->getPreprocessor(),
+        ast_unit->getASTContext());
     mutation.Apply(ast_unit->getASTContext(), ast_unit->getPreprocessor(),
                    Options(), 0, mutation_id, rewriter, dredd_declarations);
   }

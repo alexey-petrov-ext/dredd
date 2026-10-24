@@ -344,7 +344,9 @@ GetSuperQualifierReplacements(const clang::Expr& expr,
     return replacements;
   }
   SuperQualifierFinder finder;
-  // The finder only reads the expression.
+  // RecursiveASTVisitor takes a non-const statement, and has no const form in
+  // every supported LLVM version. The finder only reads the expression.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   finder.TraverseStmt(const_cast<clang::Expr*>(&expr));
   const clang::SourceManager& source_manager = ast_context.getSourceManager();
   for (const auto& super_location : finder.GetSuperLocations()) {
@@ -362,7 +364,8 @@ GetSuperQualifierReplacements(const clang::Expr& expr,
     if (!class_name.has_value()) {
       return std::nullopt;
     }
-    replacements.push_back({super_location, std::move(class_name.value())});
+    replacements.push_back({.location = super_location,
+                            .class_name = std::move(class_name.value())});
   }
   return replacements;
 }
