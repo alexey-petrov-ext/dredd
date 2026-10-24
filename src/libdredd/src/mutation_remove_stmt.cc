@@ -22,6 +22,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Preprocessor.h"
@@ -147,8 +148,37 @@ protobufs::MutationGroup MutationRemoveStmt::Apply(
       // line, but this would make mutated files harder to read.
       to_insert = "\n" + to_insert;
     }
-    rewriter_result =
-        rewriter.InsertTextAfterToken(source_range.getEnd(), to_insert);
+    // The next statement can start where this one ends, as in
+    // 'else f(x);y = 1;'. A mutation that is applied later then inserts the
+    // text that opens its mutant at the location where the closing text of
+    // this 'if' goes. The rewriter puts text that is inserted before a
+    // location in front of the text that was inserted there earlier, so the
+    // closing text would come after the start of the next statement. If the
+    // last token is a semicolon, a closing brace or a comment, it is
+    // therefore replaced by itself followed by the closing text: text that is
+    // inserted later at the next location then goes after the closing text.
+    // Another last token can end an expression of this statement, after which
+    // a mutation of that expression has already inserted text that must stay
+    // before the closing text, so the closing text is inserted after it.
+    const clang::SourceManager& source_manager =
+        preprocessor.getSourceManager();
+    clang::Token last_token{};
+    if (!clang::Lexer::getRawToken(source_range.getEnd(), last_token,
+                                   source_manager, preprocessor.getLangOpts(),
+                                   /*IgnoreWhiteSpace=*/false) &&
+        last_token.isOneOf(clang::tok::TokenKind::semi,
+                           clang::tok::TokenKind::r_brace,
+                           clang::tok::TokenKind::comment)) {
+      const std::string last_token_text(
+          source_manager.getCharacterData(source_range.getEnd()),
+          last_token.getLength());
+      rewriter_result =
+          rewriter.ReplaceText(source_range.getEnd(), last_token.getLength(),
+                               last_token_text + to_insert);
+    } else {
+      rewriter_result =
+          rewriter.InsertTextAfterToken(source_range.getEnd(), to_insert);
+    }
     assert(!rewriter_result && "Rewrite failed.\n");
     (void)rewriter_result;  // Keep release-mode compilers happy.
   }
