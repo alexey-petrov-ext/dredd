@@ -283,5 +283,41 @@ TEST(MutationRemoveStmtTest, RemoveStatementAfterComment) {
                        clang::ast_matchers::returnStmt());
 }
 
+TEST(MutationRemoveStmtTest, RemoveStatementEndingInBraceBeforeDirective) {
+  // The statement ends with the '}' of its own expression, and a directive
+  // comes before its semicolon. A mutation of that expression inserts its
+  // closing text after the '}' before the removal is applied; the closing text
+  // of the removal must come after it.
+  const std::string original =
+      "void foo(int& x) {\n  x = int{2}\n#if 1\n  ;\n#endif\n}";
+  const std::string expected =
+      "void foo(int& x) {\n"
+      "  if (!__dredd_enabled_mutation(0)) { x = int{2}/* e */;  }\n"
+      "#if 1\n  ;\n#endif\n}";
+  auto ast_unit = clang::tooling::buildASTFromCodeWithArgs(original, {"-w"});
+  ASSERT_FALSE(ast_unit->getDiagnostics().hasErrorOccurred());
+  clang::Rewriter rewriter(ast_unit->getSourceManager(),
+                           ast_unit->getLangOpts());
+  auto statement = clang::ast_matchers::match(
+      clang::ast_matchers::binaryOperator().bind("assign"),
+      ast_unit->getASTContext());
+  ASSERT_EQ(1, statement.size());
+  const auto* assign = statement[0].getNodeAs<clang::BinaryOperator>("assign");
+  ASSERT_FALSE(
+      rewriter.InsertTextAfterToken(assign->getRHS()->getEndLoc(), "/* e */"));
+  int mutation_id = 0;
+  std::unordered_set<std::string> dredd_declarations;
+  MutationRemoveStmt(*assign, ast_unit->getPreprocessor(),
+                     ast_unit->getASTContext())
+      .Apply(ast_unit->getASTContext(), ast_unit->getPreprocessor(), Options(),
+             0, mutation_id, rewriter, dredd_declarations);
+  ASSERT_EQ(1, mutation_id);
+  const auto* rewrite_buffer = rewriter.getRewriteBufferFor(
+      ast_unit->getSourceManager().getMainFileID());
+  const std::string rewritten_text(rewrite_buffer->begin(),
+                                   rewrite_buffer->end());
+  ASSERT_EQ(expected, rewritten_text);
+}
+
 }  // namespace
 }  // namespace dredd

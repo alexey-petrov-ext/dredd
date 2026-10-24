@@ -20,6 +20,7 @@
 #include <unordered_set>
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -31,8 +32,37 @@
 #include "clang/Tooling/Transformer/SourceCode.h"
 #include "libdredd/options.h"
 #include "libdredd/util.h"
+#include "llvm/Support/Casting.h"
 
 namespace dredd {
+
+namespace {
+
+// Determines whether |stmt| ends with the closing brace of a compound
+// statement, such as the body of a loop, and not with the last token of an
+// expression, which can be a closing brace too.
+bool EndsWithCompoundStmt(const clang::Stmt& stmt) {
+  const clang::Stmt* current = &stmt;
+  while (llvm::dyn_cast<clang::CompoundStmt>(current) == nullptr) {
+    if (llvm::dyn_cast<clang::Expr>(current) != nullptr) {
+      return false;
+    }
+    // Descend into the last child that ends where |current| ends.
+    const clang::Stmt* last_child = nullptr;
+    for (const clang::Stmt* child : current->children()) {
+      if (child != nullptr && child->getEndLoc() == current->getEndLoc()) {
+        last_child = child;
+      }
+    }
+    if (last_child == nullptr) {
+      return false;
+    }
+    current = last_child;
+  }
+  return true;
+}
+
+}  // namespace
 
 MutationRemoveStmt::MutationRemoveStmt(const clang::Stmt& stmt,
                                        const clang::Preprocessor& preprocessor,
@@ -154,16 +184,20 @@ protobufs::MutationGroup MutationRemoveStmt::Apply(
     // this 'if' goes. The rewriter puts text that is inserted before a
     // location in front of the text that was inserted there earlier, so the
     // closing text would come after the start of the next statement. If the
-    // last token is a semicolon, a closing brace or a comment, it is
-    // therefore replaced by itself followed by the closing text: text that is
-    // inserted later at the next location then goes after the closing text.
-    // Another last token can end an expression of this statement, after which
-    // a mutation of that expression has already inserted text that must stay
-    // before the closing text, so the closing text is inserted after it.
+    // last token is the semicolon or the comment that extends the range, or
+    // the closing brace of a compound statement that ends this statement, it
+    // is therefore replaced by itself followed by the closing text: text that
+    // is inserted later at the next location then goes after the closing text.
+    // Any other last token, a closing brace too as in 'x = int{2}', can end an
+    // expression of this statement, after which a mutation of that expression
+    // has already inserted text that must stay before the closing text, so the
+    // closing text is inserted after it.
     const clang::SourceManager& source_manager =
         preprocessor.getSourceManager();
     clang::Token last_token{};
-    if (!clang::Lexer::getRawToken(source_range.getEnd(), last_token,
+    if ((is_extended_with_semi || is_extended_with_comment ||
+         EndsWithCompoundStmt(*stmt_)) &&
+        !clang::Lexer::getRawToken(source_range.getEnd(), last_token,
                                    source_manager, preprocessor.getLangOpts(),
                                    /*IgnoreWhiteSpace=*/false) &&
         last_token.isOneOf(clang::tok::TokenKind::semi,
