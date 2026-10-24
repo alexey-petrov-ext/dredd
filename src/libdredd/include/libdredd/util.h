@@ -15,7 +15,9 @@
 #ifndef LIBDREDD_UTIL_H
 #define LIBDREDD_UTIL_H
 
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Expr.h"
@@ -23,6 +25,7 @@
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Rewrite/Core/Rewriter.h"
 #include "llvm/ADT/APFloat.h"
 
 namespace dredd {
@@ -90,6 +93,33 @@ bool EvaluateAsFloat(const clang::Expr& expr,
 // expression is value-dependent).
 bool IsCxx11ConstantExpr(const clang::Expr& expr,
                          const clang::ASTContext& ast_context);
+
+// With Microsoft extensions, the qualifier `__super::` names a member of a base
+// class. Dredd puts some operands into a lambda, so that it can evaluate them
+// lazily. A lambda has no base class, so `__super` cannot be resolved in the
+// body of a lambda. In such an operand, `__super` is therefore replaced with
+// the class of the member that the lookup through `__super` found.
+struct SuperQualifierReplacement {
+  // The location of the keyword `__super`.
+  clang::SourceLocation location;
+  // The name of the class from the global scope, such as `::ns::Base<int>`.
+  std::string class_name;
+};
+
+// Returns the replacements of the `__super` qualifiers in |expr|. Returns no
+// value if a `__super` qualifier in |expr| cannot be replaced, for example
+// because it names a dependent base class in a template, or because a macro
+// writes it. Then |expr| must not be put into a lambda.
+[[nodiscard]] std::optional<std::vector<SuperQualifierReplacement>>
+GetSuperQualifierReplacements(const clang::Expr& expr,
+                              const clang::ASTContext& ast_context);
+
+// Replaces each `__super` of |replacements| with its class. An operand in a
+// lambda can be part of a larger operand that goes into a lambda too, so a
+// `__super` can be replaced more than once; each time gives the same text.
+void ReplaceSuperQualifiers(
+    const std::vector<SuperQualifierReplacement>& replacements,
+    clang::Rewriter& rewriter);
 
 // It is often necessary to ask whether a given statement (which includes
 // expressions) has a parent of a given type. This helper returns nullptr if

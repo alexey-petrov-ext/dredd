@@ -16,7 +16,10 @@
 
 #include <cassert>
 #include <cctype>
+#include <optional>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
@@ -645,6 +648,19 @@ protobufs::MutationGroup MutationReplaceExpr::Apply(
     const Options& options, int first_mutation_id_in_file, int& mutation_id,
     clang::Rewriter& rewriter,
     std::unordered_set<std::string>& dredd_declarations) const {
+  std::vector<SuperQualifierReplacement> super_qualifier_replacements;
+  if (ArgRequiresLambda(ast_context)) {
+    std::optional<std::vector<SuperQualifierReplacement>> replacements =
+        GetSuperQualifierReplacements(*expr_, ast_context);
+    if (!replacements.has_value()) {
+      // The expression would go into a lambda, where a __super in it cannot be
+      // resolved, and that __super cannot be replaced with its class. Leave
+      // the expression alone.
+      return {};
+    }
+    super_qualifier_replacements = std::move(replacements.value());
+  }
+
   // The protobuf object for the mutation, which will be wrapped in a
   // MutationGroup.
   protobufs::MutationReplaceExpr inner_result;
@@ -680,6 +696,7 @@ protobufs::MutationGroup MutationReplaceExpr::Apply(
   ReplaceExprWithFunctionCall(
       new_function_name, input_type, mutation_id - first_mutation_id_in_file,
       ast_context, preprocessor, options.GetShowAstNodeTypes(), rewriter);
+  ReplaceSuperQualifiers(super_qualifier_replacements, rewriter);
 
   const std::string new_function =
       GenerateMutatorFunction(ast_context, new_function_name, result_type,

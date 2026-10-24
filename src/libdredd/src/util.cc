@@ -16,16 +16,30 @@
 
 #include <algorithm>
 #include <cassert>
+#include <map>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/PrettyPrinter.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Rewrite/Core/Rewriter.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace dredd {
 
@@ -211,6 +225,174 @@ bool IsCxx11ConstantExpr(const clang::Expr& expr,
     return {};
   }
   return {begin_loc_in_main_file, end_loc_in_main_file};
+}
+
+namespace {
+
+bool IsMicrosoftSuper(clang::NestedNameSpecifierLoc qualifier_loc) {
+  if (!qualifier_loc) {
+    return false;
+  }
+#if LLVM_VERSION_MAJOR >= 22
+  return qualifier_loc.getNestedNameSpecifier().getKind() ==
+         clang::NestedNameSpecifier::Kind::MicrosoftSuper;
+#else
+  return qualifier_loc.getNestedNameSpecifier()->getKind() ==
+         clang::NestedNameSpecifier::Super;
+#endif
+}
+
+// Finds each `__super` qualifier in an expression, and the class of the member
+// that the expression names through it.
+class SuperQualifierFinder
+    : public clang::RecursiveASTVisitor<SuperQualifierFinder> {
+ public:
+  bool TraverseNestedNameSpecifierLoc(
+      clang::NestedNameSpecifierLoc qualifier_loc) {
+    if (IsMicrosoftSuper(qualifier_loc)) {
+      super_locations_.push_back(qualifier_loc.getLocalBeginLoc());
+    }
+    return RecursiveASTVisitor::TraverseNestedNameSpecifierLoc(qualifier_loc);
+  }
+
+  bool VisitDeclRefExpr(clang::DeclRefExpr* decl_ref_expr) {
+    RecordClassOfMember(decl_ref_expr->getQualifierLoc(),
+                        *decl_ref_expr->getFoundDecl());
+    return true;
+  }
+
+  bool VisitMemberExpr(clang::MemberExpr* member_expr) {
+    RecordClassOfMember(member_expr->getQualifierLoc(),
+                        *member_expr->getFoundDecl().getDecl());
+    return true;
+  }
+
+  [[nodiscard]] const std::vector<clang::SourceLocation>& GetSuperLocations()
+      const {
+    return super_locations_;
+  }
+
+  // Returns the class for the `__super` at |super_location|, or nullptr if
+  // that `__super` is not the whole qualifier of a member, as in
+  // `__super::Inner::f()`, or if the member is not known, as in a template.
+  [[nodiscard]] const clang::CXXRecordDecl* GetClass(
+      clang::SourceLocation super_location) const {
+    const auto found = classes_.find(super_location);
+    return found == classes_.end() ? nullptr : found->second;
+  }
+
+ private:
+  // The class to name is the class that holds the declaration that the lookup
+  // found. For a member that a using-declaration brings into a class, that is
+  // the class of the using-declaration, so that the access stays the same.
+  void RecordClassOfMember(clang::NestedNameSpecifierLoc qualifier_loc,
+                           const clang::NamedDecl& found_decl) {
+    if (!IsMicrosoftSuper(qualifier_loc)) {
+      return;
+    }
+    // The enumerators of an unscoped enumeration are members of the class
+    // that holds the enumeration.
+    if (const auto* record = llvm::dyn_cast<clang::CXXRecordDecl>(
+            found_decl.getDeclContext()->getRedeclContext())) {
+      classes_[qualifier_loc.getLocalBeginLoc()] = record;
+    }
+  }
+
+  std::vector<clang::SourceLocation> super_locations_;
+  std::map<clang::SourceLocation, const clang::CXXRecordDecl*> classes_;
+};
+
+// Returns the name of |record| from the global scope, with the template
+// arguments of a specialization. Returns no value if a qualified name cannot
+// name |record|: for a dependent class, a class in a function, or a class in a
+// class without a name.
+std::optional<std::string> GetNameFromGlobalScope(
+    const clang::CXXRecordDecl& record, const clang::ASTContext& ast_context) {
+  if (record.isDependentContext()) {
+    return std::nullopt;
+  }
+  for (const clang::DeclContext* context = &record;
+       !context->isTranslationUnit(); context = context->getParent()) {
+    if (llvm::isa<clang::NamespaceDecl, clang::LinkageSpecDecl>(context)) {
+      continue;
+    }
+    const auto* enclosing_record =
+        llvm::dyn_cast<clang::CXXRecordDecl>(context);
+    if (enclosing_record == nullptr ||
+        enclosing_record->getIdentifier() == nullptr) {
+      return std::nullopt;
+    }
+  }
+  clang::PrintingPolicy printing_policy = ast_context.getPrintingPolicy();
+  // A qualified name cannot name an unnamed namespace, but its lookup finds the
+  // members of an unnamed namespace in the enclosing namespace.
+  printing_policy.SuppressUnwrittenScope = true;
+  std::string name;
+  llvm::raw_string_ostream stream(name);
+  record.getNameForDiagnostic(stream, printing_policy, /*Qualified=*/true);
+  return "::" + stream.str();
+}
+
+}  // namespace
+
+std::optional<std::vector<SuperQualifierReplacement>>
+GetSuperQualifierReplacements(const clang::Expr& expr,
+                              const clang::ASTContext& ast_context) {
+  std::vector<SuperQualifierReplacement> replacements;
+  if (!ast_context.getLangOpts().MicrosoftExt) {
+    // Only the Microsoft extensions have the keyword `__super`.
+    return replacements;
+  }
+  SuperQualifierFinder finder;
+  // The finder only reads the expression.
+  finder.TraverseStmt(const_cast<clang::Expr*>(&expr));
+  const clang::SourceManager& source_manager = ast_context.getSourceManager();
+  for (const auto& super_location : finder.GetSuperLocations()) {
+    if (!super_location.isFileID() ||
+        !source_manager.isInMainFile(super_location)) {
+      // A macro writes the keyword, so it cannot be replaced.
+      return std::nullopt;
+    }
+    const clang::CXXRecordDecl* record = finder.GetClass(super_location);
+    if (record == nullptr) {
+      return std::nullopt;
+    }
+    std::optional<std::string> class_name =
+        GetNameFromGlobalScope(*record, ast_context);
+    if (!class_name.has_value()) {
+      return std::nullopt;
+    }
+    replacements.push_back({super_location, std::move(class_name.value())});
+  }
+  return replacements;
+}
+
+void ReplaceSuperQualifiers(
+    const std::vector<SuperQualifierReplacement>& replacements,
+    clang::Rewriter& rewriter) {
+  // The text that other mutations insert before and after the keyword is not
+  // part of the text to replace.
+  clang::Rewriter::RewriteOptions without_insertions;
+  without_insertions.IncludeInsertsAtBeginOfRange = false;
+  without_insertions.IncludeInsertsAtEndOfRange = false;
+  for (const auto& replacement : replacements) {
+    const unsigned int keyword_length = clang::Lexer::MeasureTokenLength(
+        replacement.location, rewriter.getSourceMgr(), rewriter.getLangOpts());
+    // The text in place of the keyword is the keyword, or the class if the
+    // lambda of an operand in this operand replaced the keyword already.
+    const int current_length = rewriter.getRangeSize(
+        clang::CharSourceRange::getCharRange(
+            replacement.location,
+            replacement.location.getLocWithOffset(
+                static_cast<clang::SourceLocation::IntTy>(keyword_length))),
+        without_insertions);
+    assert(current_length >= 0 && "The keyword must be rewritable.");
+    const bool rewriter_result = rewriter.ReplaceText(
+        replacement.location, static_cast<unsigned int>(current_length),
+        replacement.class_name);
+    assert(!rewriter_result && "Rewrite failed.\n");
+    (void)rewriter_result;  // Keep release-mode compilers happy.
+  }
 }
 
 }  // namespace dredd
