@@ -35,6 +35,7 @@
 #include "libdreddtest/gtest.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Config/llvm-config.h"
 
 namespace dredd {
 namespace {
@@ -437,31 +438,64 @@ struct Derived : ::ns::TBase<::ns::Base> {
 }
 
 TEST(MutationReplaceExprTest, MutateCallThroughSuperToBaseWithArguments) {
-  // A pointer, a number and a template are template arguments that a name from
-  // the global scope can hold.
+  // A pointer and a number are template arguments that a name from the global
+  // scope can hold.
   const std::string original = R"(namespace ns {
 struct Base {};
-template <typename T> struct Holder {};
-template <typename T, int N, template <typename> class H> struct TBase {
+template <typename T, int N> struct TBase {
   static bool Ok();
 };
 }
-struct Derived : ns::TBase<const ns::Base*, 3, ns::Holder> {
+struct Derived : ns::TBase<const ns::Base*, 3> {
   void foo() { bool valid = __super::Ok(); }
 };
 )";
   const std::string expected = R"(namespace ns {
 struct Base {};
-template <typename T> struct Holder {};
-template <typename T, int N, template <typename> class H> struct TBase {
+template <typename T, int N> struct TBase {
   static bool Ok();
 };
 }
-struct Derived : ns::TBase<const ns::Base*, 3, ns::Holder> {
-  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::TBase<const ::ns::Base *, 3, ::ns::Holder>::Ok()); }, 0); }
+struct Derived : ns::TBase<const ns::Base*, 3> {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::TBase<const ::ns::Base *, 3>::Ok()); }, 0); }
 };
 )";
   const int kNumReplacements = 3;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, MutateCallThroughSuperToBaseWithTemplate) {
+  // From LLVM 22, the name of a template argument that is a template is from
+  // the global scope too, after a space that keeps `<:` from a digraph. Before,
+  // it is not, and Dredd leaves `__super` alone.
+  const std::string original = R"(namespace ns {
+template <typename T> struct Holder {};
+template <template <typename> class H> struct TBase {
+  static bool Ok();
+};
+}
+struct Derived : ns::TBase<ns::Holder> {
+  void foo() { bool valid = __super::Ok(); }
+};
+)";
+#if LLVM_VERSION_MAJOR >= 22
+  const std::string expected = R"(namespace ns {
+template <typename T> struct Holder {};
+template <template <typename> class H> struct TBase {
+  static bool Ok();
+};
+}
+struct Derived : ns::TBase<ns::Holder> {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::TBase< ::ns::Holder>::Ok()); }, 0); }
+};
+)";
+  const int kNumReplacements = 3;
+#else
+  const std::string& expected = original;
+  const int kNumReplacements = 0;
+#endif
   TestReplacementWithMicrosoftExtensions(
       original, expected, kNumReplacements,
       clang::ast_matchers::callExpr().bind("expr"));
