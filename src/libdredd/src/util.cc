@@ -26,10 +26,15 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/AST/QualTypeNames.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/TemplateBase.h"
+#include "clang/AST/TemplateName.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
@@ -39,7 +44,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace dredd {
 
@@ -302,35 +306,100 @@ class SuperQualifierFinder
   std::map<clang::SourceLocation, const clang::CXXRecordDecl*> classes_;
 };
 
-// Returns the name of |record| from the global scope, with the template
-// arguments of a specialization. Returns no value if a qualified name cannot
-// name |record|: for a dependent class, a class in a function, or a class in a
-// class without a name.
-std::optional<std::string> GetNameFromGlobalScope(
-    const clang::CXXRecordDecl& record, const clang::ASTContext& ast_context) {
-  if (record.isDependentContext()) {
-    return std::nullopt;
+bool IsNameableFromGlobalScope(const clang::NamedDecl& decl);
+
+// Returns true if a name from the global scope can spell |type|. The name of
+// each class and enumeration in |type| is from the global scope too. Only the
+// forms that clang::TypeName::getFullyQualifiedName qualifies are accepted.
+bool IsTypeNameableFromGlobalScope(clang::QualType type) {
+  const clang::Type* canonical_type = type.getCanonicalType().getTypePtr();
+  if (canonical_type->isBuiltinType()) {
+    return true;
   }
-  for (const clang::DeclContext* context = &record;
+  if (const auto* pointer_type =
+          llvm::dyn_cast<clang::PointerType>(canonical_type)) {
+    return IsTypeNameableFromGlobalScope(pointer_type->getPointeeType());
+  }
+  if (llvm::isa<clang::TagType>(canonical_type)) {
+    return IsNameableFromGlobalScope(*canonical_type->getAsTagDecl());
+  }
+  return false;
+}
+
+bool IsTemplateArgumentNameableFromGlobalScope(
+    const clang::TemplateArgument& argument) {
+  switch (argument.getKind()) {
+    case clang::TemplateArgument::Type:
+      return IsTypeNameableFromGlobalScope(argument.getAsType());
+    case clang::TemplateArgument::Integral:
+      // The value of an enumeration prints as the name of an enumerator, which
+      // is not from the global scope.
+      return !argument.getIntegralType()->isEnumeralType();
+    case clang::TemplateArgument::Template: {
+      const clang::TemplateDecl* template_decl =
+          argument.getAsTemplate().getAsTemplateDecl();
+      return template_decl != nullptr &&
+             IsNameableFromGlobalScope(*template_decl);
+    }
+    default:
+      return false;
+  }
+}
+
+// Returns true if a name from the global scope names |decl|, which is a class,
+// an enumeration or a template. The name holds the template arguments of each
+// specialization in it, and none of them may be a type without such a name.
+// An unnamed namespace has no name either: `::Base` would name a class in the
+// enclosing namespace, or no class at all.
+bool IsNameableFromGlobalScope(const clang::NamedDecl& decl) {
+  if (decl.getIdentifier() == nullptr) {
+    return false;
+  }
+  if (const auto* specialization =
+          llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(&decl)) {
+    for (const auto& argument : specialization->getTemplateArgs().asArray()) {
+      if (!IsTemplateArgumentNameableFromGlobalScope(argument)) {
+        return false;
+      }
+    }
+  }
+  for (const clang::DeclContext* context = decl.getDeclContext();
        !context->isTranslationUnit(); context = context->getParent()) {
-    if (llvm::isa<clang::NamespaceDecl, clang::LinkageSpecDecl>(context)) {
+    if (const auto* namespace_decl =
+            llvm::dyn_cast<clang::NamespaceDecl>(context)) {
+      if (namespace_decl->isAnonymousNamespace()) {
+        return false;
+      }
       continue;
     }
+    if (llvm::isa<clang::LinkageSpecDecl, clang::ExportDecl>(context)) {
+      continue;
+    }
+    // A class in a function has no name from the global scope.
     const auto* enclosing_record =
         llvm::dyn_cast<clang::CXXRecordDecl>(context);
-    if (enclosing_record == nullptr ||
-        enclosing_record->getIdentifier() == nullptr) {
-      return std::nullopt;
-    }
+    return enclosing_record != nullptr &&
+           IsNameableFromGlobalScope(*enclosing_record);
   }
-  clang::PrintingPolicy printing_policy = ast_context.getPrintingPolicy();
-  // A qualified name cannot name an unnamed namespace, but its lookup finds the
-  // members of an unnamed namespace in the enclosing namespace.
-  printing_policy.SuppressUnwrittenScope = true;
-  std::string name;
-  llvm::raw_string_ostream stream(name);
-  record.getNameForDiagnostic(stream, printing_policy, /*Qualified=*/true);
-  return "::" + stream.str();
+  return true;
+}
+
+// Returns the name of |record| from the global scope, such as
+// `::ns::Base<::ns::Arg>`: the template arguments are named from the global
+// scope too. Returns no value if no such name denotes |record|.
+std::optional<std::string> GetNameFromGlobalScope(
+    const clang::CXXRecordDecl& record, const clang::ASTContext& ast_context) {
+  if (record.isDependentContext() || !IsNameableFromGlobalScope(record)) {
+    return std::nullopt;
+  }
+#if LLVM_VERSION_MAJOR >= 22
+  const clang::QualType type = ast_context.getCanonicalTagType(&record);
+#else
+  const clang::QualType type = ast_context.getRecordType(&record);
+#endif
+  return clang::TypeName::getFullyQualifiedName(type, ast_context,
+                                                ast_context.getPrintingPolicy(),
+                                                /*WithGlobalNsPrefix=*/true);
 }
 
 }  // namespace
@@ -378,9 +447,21 @@ void ReplaceSuperQualifiers(
   clang::Rewriter::RewriteOptions without_insertions;
   without_insertions.IncludeInsertsAtBeginOfRange = false;
   without_insertions.IncludeInsertsAtEndOfRange = false;
+  const clang::SourceManager& source_manager = rewriter.getSourceMgr();
   for (const auto& replacement : replacements) {
     const unsigned int keyword_length = clang::Lexer::MeasureTokenLength(
-        replacement.location, rewriter.getSourceMgr(), rewriter.getLangOpts());
+        replacement.location, source_manager, rewriter.getLangOpts());
+    // The class name starts with `::`, which would form another token with a
+    // colon (`:::`) or a percent sign (the digraph `%:`) right before the
+    // keyword. A space keeps them apart.
+    std::string text = replacement.class_name;
+    if (source_manager.getFileOffset(replacement.location) > 0) {
+      const char previous = *source_manager.getCharacterData(
+          replacement.location.getLocWithOffset(-1));
+      if (previous == ':' || previous == '%') {
+        text.insert(0, " ");
+      }
+    }
     // The text in place of the keyword is the keyword, or the class if the
     // lambda of an operand in this operand replaced the keyword already.
     const int current_length = rewriter.getRangeSize(
@@ -391,8 +472,7 @@ void ReplaceSuperQualifiers(
         without_insertions);
     assert(current_length >= 0 && "The keyword must be rewritable.");
     const bool rewriter_result = rewriter.ReplaceText(
-        replacement.location, static_cast<unsigned int>(current_length),
-        replacement.class_name);
+        replacement.location, static_cast<unsigned int>(current_length), text);
     assert(!rewriter_result && "Rewrite failed.\n");
     (void)rewriter_result;  // Keep release-mode compilers happy.
   }

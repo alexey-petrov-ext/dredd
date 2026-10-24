@@ -377,5 +377,136 @@ TEST(MutationReplaceExprTest, DoNotMutateSuperOfDependentBase) {
       clang::ast_matchers::cxxStaticCastExpr().bind("expr"));
 }
 
+TEST(MutationReplaceExprTest, MutateCallThroughSuperAfterColonAndPercent) {
+  // The name of the class starts with `::`. A space keeps it from forming a
+  // token with a colon (`:::`) or a percent sign (the digraph `%:`).
+  const std::string original =
+      R"(struct Base { static bool Ok(); static int Count(); };
+struct Derived : Base {
+  void foo(bool flag) { bool valid = flag ? flag :__super::Ok(); }
+  void bar(bool flag) { bool valid = flag ? flag : 7 %__super::Count() > 0; }
+};
+)";
+  const std::string expected =
+      R"(struct Base { static bool Ok(); static int Count(); };
+struct Derived : Base {
+  void foo(bool flag) { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(flag ? flag : ::Base::Ok()); }, 3); }
+  void bar(bool flag) { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(flag ? flag : 7 % ::Base::Count() > 0); }, 0); }
+};
+)";
+  const int kNumReplacements = 6;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::conditionalOperator().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest,
+     MutateCallThroughSuperToBaseWithShadowedArgument) {
+  // In the namespace app, `ns::Base` names app::ns::Base, so the template
+  // argument is named from the global scope too. The printer puts a space
+  // between `<` and `::`, which would otherwise start the digraph `<:`.
+  const std::string original = R"(namespace ns {
+struct Base {};
+template <typename T> struct TBase { static bool Ok(); };
+}
+namespace app {
+namespace ns {
+struct Base {};
+}
+struct Derived : ::ns::TBase<::ns::Base> {
+  void foo() { bool valid = __super::Ok(); }
+};
+}
+)";
+  const std::string expected = R"(namespace ns {
+struct Base {};
+template <typename T> struct TBase { static bool Ok(); };
+}
+namespace app {
+namespace ns {
+struct Base {};
+}
+struct Derived : ::ns::TBase<::ns::Base> {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::TBase< ::ns::Base>::Ok()); }, 0); }
+};
+}
+)";
+  const int kNumReplacements = 3;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, MutateCallThroughSuperToBaseWithArguments) {
+  // A pointer, a number and a template are template arguments that a name from
+  // the global scope can hold.
+  const std::string original = R"(namespace ns {
+struct Base {};
+template <typename T> struct Holder {};
+template <typename T, int N, template <typename> class H> struct TBase {
+  static bool Ok();
+};
+}
+struct Derived : ns::TBase<const ns::Base*, 3, ns::Holder> {
+  void foo() { bool valid = __super::Ok(); }
+};
+)";
+  const std::string expected = R"(namespace ns {
+struct Base {};
+template <typename T> struct Holder {};
+template <typename T, int N, template <typename> class H> struct TBase {
+  static bool Ok();
+};
+}
+struct Derived : ns::TBase<const ns::Base*, 3, ns::Holder> {
+  void foo() { bool valid = __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(::ns::TBase<const ::ns::Base *, 3, ::ns::Holder>::Ok()); }, 0); }
+};
+)";
+  const int kNumReplacements = 3;
+  TestReplacementWithMicrosoftExtensions(
+      original, expected, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, DoNotMutateSuperOfBaseInUnnamedNamespace) {
+  // `::Base` would name the global class, and no name from the global scope
+  // names the class in the unnamed namespace.
+  const std::string original = R"(struct Base { static bool Ok(); };
+namespace {
+struct Base { static bool Ok(); };
+struct Derived : Base {
+  void foo() { bool valid = __super::Ok(); }
+};
+}
+)";
+  const int kNumReplacements = 0;
+  TestReplacementWithMicrosoftExtensions(
+      original, original, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
+TEST(MutationReplaceExprTest, DoNotMutateSuperOfBaseWithUnnamedArgument) {
+  // No name from the global scope names a class without a name, or a class in
+  // a function, so the base cannot be named when one is a template argument.
+  const std::string original = R"(template <typename T> struct TBase {
+  static bool Ok();
+};
+struct { int x; } unnamed;
+struct Derived : TBase<decltype(unnamed)> {
+  void foo() { bool valid = __super::Ok(); }
+};
+void bar() {
+  struct Local {};
+  struct LocalDerived : TBase<Local> {
+    void foo() { bool valid = __super::Ok(); }
+  };
+}
+)";
+  const int kNumReplacements = 0;
+  TestReplacementWithMicrosoftExtensions(
+      original, original, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
 }  // namespace
 }  // namespace dredd
