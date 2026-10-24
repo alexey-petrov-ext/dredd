@@ -36,15 +36,17 @@ class __dredd_lazy {
 }  // namespace
 
 #ifdef _MSC_VER
-#define thread_local __declspec(thread)
+#define __dredd_thread_local __declspec(thread)
 #elif __APPLE__
-#define thread_local __thread
+#define __dredd_thread_local __thread
+#else
+#define __dredd_thread_local thread_local
 #endif
 
-static thread_local bool __dredd_some_mutation_enabled = true;
+static __dredd_thread_local bool __dredd_some_mutation_enabled = true;
 static bool __dredd_enabled_mutation(int local_mutation_id) {
-  static thread_local bool initialized = false;
-  static thread_local uint64_t enabled_bitset[1];
+  static __dredd_thread_local bool initialized = false;
+  static __dredd_thread_local uint64_t enabled_bitset[1];
   if (!initialized) {
     bool some_mutation_enabled = false;
     const char* dredd_environment_variable = std::getenv("DREDD_ENABLED_MUTATION");

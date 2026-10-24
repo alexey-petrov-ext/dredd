@@ -125,9 +125,11 @@ const char* const kDreddPreludeMutantTrackingLock =
 
 const char* const kDreddPreludeThreadLocalCpp =
     "#ifdef _MSC_VER\n"
-    "#define thread_local __declspec(thread)\n"
+    "#define __dredd_thread_local __declspec(thread)\n"
     "#elif __APPLE__\n"
-    "#define thread_local __thread\n"
+    "#define __dredd_thread_local __thread\n"
+    "#else\n"
+    "#define __dredd_thread_local thread_local\n"
     "#endif\n"
     "\n";
 
@@ -410,14 +412,14 @@ std::string MutateAstConsumer::GetRegularDreddPreludeCpp(
       // __dredd_enabled_mutation gets invoked the first time enabledness is
       // queried. At that point it will get set to false if no mutations are
       // actually enabled.
-      result
-          << "static thread_local bool __dredd_some_mutation_enabled = true;\n";
+      result << "static __dredd_thread_local bool "
+                "__dredd_some_mutation_enabled = true;\n";
     }
     result << "static bool __dredd_enabled_mutation(int local_mutation_id) {\n";
-    result << "  static thread_local bool initialized = false;\n";
+    result << "  static __dredd_thread_local bool initialized = false;\n";
     // Array of booleans, one per mutation in this file, determining whether
     // they are enabled.
-    result << "  static thread_local uint64_t enabled_bitset["
+    result << "  static __dredd_thread_local uint64_t enabled_bitset["
            << num_64_bit_words_required << "];\n";
     result << "  if (!initialized) {\n";
     // Record locally whether some mutation is enabled.
@@ -591,20 +593,21 @@ std::string MutateAstConsumer::GetRegularDreddPreludeC(
     result << "}\n";
   } else {
     result << "#ifdef _MSC_VER\n";
-    result << "#define thread_local __declspec(thread)\n";
+    result << "#define __dredd_thread_local __declspec(thread)\n";
     result << "#elif __APPLE__\n";
-    result << "#define thread_local __thread\n";
+    result << "#define __dredd_thread_local __thread\n";
     result << "#else\n";
-    result << "#define thread_local _Thread_local\n";
+    result << "#define __dredd_thread_local _Thread_local\n";
     result << "#endif\n";
     result << "\n";
     if (options_->GetEnablednessCheckingMode() ==
         Options::EnablednessCheckingMode::STANDARD) {
-      result << "static thread_local int __dredd_some_mutation_enabled = 1;\n";
+      result << "static __dredd_thread_local int __dredd_some_mutation_enabled "
+                "= 1;\n";
     }
     result << "static bool __dredd_enabled_mutation(int local_mutation_id) {\n";
-    result << "  static thread_local int initialized = 0;\n";
-    result << "  static thread_local uint64_t enabled_bitset["
+    result << "  static __dredd_thread_local int initialized = 0;\n";
+    result << "  static __dredd_thread_local uint64_t enabled_bitset["
            << num_64_bit_words_required << "];\n";
     result << "  if (!initialized) {\n";
     if (options_->GetEnablednessCheckingMode() ==
