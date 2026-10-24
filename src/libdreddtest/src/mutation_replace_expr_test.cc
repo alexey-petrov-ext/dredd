@@ -507,5 +507,31 @@ void bar() {
       clang::ast_matchers::callExpr().bind("expr"));
 }
 
+TEST(MutationReplaceExprTest, DoNotMutateSuperOfBaseInInlineNamespace) {
+  // The name from the global scope leaves an inline namespace out, so it would
+  // name the class of the enclosing namespace: `::ns::Base` in place of
+  // `ns::v1::Base`. This holds for a template argument too.
+  const std::string original = R"(namespace ns {
+struct Base { static bool Ok(); };
+inline namespace v1 {
+struct Base { static bool Ok(); };
+}
+}
+struct Derived : ns::v1::Base {
+  void foo() { bool valid = __super::Ok(); }
+};
+template <typename T> struct TBase {
+  static bool Ok();
+};
+struct ArgumentDerived : TBase<ns::v1::Base> {
+  void foo() { bool valid = __super::Ok(); }
+};
+)";
+  const int kNumReplacements = 0;
+  TestReplacementWithMicrosoftExtensions(
+      original, original, kNumReplacements,
+      clang::ast_matchers::callExpr().bind("expr"));
+}
+
 }  // namespace
 }  // namespace dredd
