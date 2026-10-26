@@ -28,6 +28,7 @@ except the few fork-only files listed below.
 | `upstream/adjacent-statements` | When a removed statement ends where the next statement starts (no white space after a `;`, a comment or the brace of a compound statement, as in `x = 1;y = 2;`), the closing brace of the removal goes before the text that opens the mutants of the next statement. The mutant build of such code used to nest the two in the wrong order, and MSVC stopped with C2143 and C2660. | not opened |
 | `upstream/super-in-lazy-operand` (stacked on `upstream/tracking-prelude-without-stl`) | An operand that Dredd evaluates lazily, in a lambda, names the base class in place of a `__super` qualifier (`::Base::f()` for `__super::f()`): a lambda has no base class, so MSVC stopped with C2791. When the class cannot be named so, for example a dependent base, Dredd does not mutate that expression or operator. | not opened |
 | `upstream/tracking-file-open-once` (stacked on `upstream/tracking-prelude-without-stl`) | Both tracking preludes open the tracking file once for each program, at the first reached mutation group, and keep the stream beside the lock of the file. Each group writes its lines and flushes them under the lock, so that a crash loses no recorded mutant. The preludes used to open and close the file for each group: on Windows, with the virus scanner, a test that reached thousands of groups took many times longer with the tracking than without it, above all with many test processes at the same time. | not opened |
+| `upstream/nrvo-copy-elision` | `getSourceLocationInMainFileForExtremeOfRange` returns a conditional expression, not the named `macro_expansion_location` from one branch. Clang 22 reported the copy with `-Wnrvo`, which `-Weverything` enables, so a build with Clang 22 itself as the compiler stopped with `-Werror`. The Linux CI jobs compile with the runner's Clang 18 and do not see it. | not opened |
 
 ### Fork-only files
 
@@ -49,7 +50,7 @@ old_newer_llvm=$(git rev-parse upstream/newer-llvm)
 old_prelude_without_stl=$(git rev-parse upstream/prelude-without-stl)
 old_tracking_prelude_without_stl=$(git rev-parse upstream/tracking-prelude-without-stl)
 git checkout main && git merge --ff-only upstream/main
-for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments upstream/adjacent-statements; do
+for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments upstream/adjacent-statements upstream/nrvo-copy-elision; do
   git rebase main "$b"
 done
 git rebase --onto upstream/prelude-without-stl "$old_prelude_without_stl" upstream/tracking-prelude-without-stl
