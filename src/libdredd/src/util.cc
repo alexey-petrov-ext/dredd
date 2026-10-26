@@ -77,14 +77,15 @@ clang::SourceLocation getSourceLocationInMainFileForExtremeOfRange(
   }
   // The source location does correspond to the extreme of a macro expansion.
   // Finally, we check whether the expansion location is in the main file or
-  // some other file.
-  if (source_manager.getFileID(macro_expansion_location) ==
-      source_manager.getMainFileID()) {
-    // The expansion location is in the main file, so can be returned.
-    return macro_expansion_location;
-  }
-  // Tne expansion location is in some file other than the main file.
-  return {};
+  // some other file. If it is in the main file it can be returned; otherwise an
+  // invalid location is returned. This is a conditional expression rather than
+  // a return of the named variable from one branch: returning a named variable
+  // on some paths and a different object on others prevents copy elision,
+  // which recent versions of Clang (e.g. Clang 22) report with -Wnrvo.
+  return source_manager.getFileID(macro_expansion_location) ==
+                 source_manager.getMainFileID()
+             ? macro_expansion_location
+             : clang::SourceLocation();
 }
 }  // namespace
 
