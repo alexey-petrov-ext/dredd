@@ -29,6 +29,7 @@ except the few fork-only files listed below.
 | `upstream/super-in-lazy-operand` (stacked on `upstream/tracking-prelude-without-stl`) | An operand that Dredd evaluates lazily, in a lambda, names the base class in place of a `__super` qualifier (`::Base::f()` for `__super::f()`): a lambda has no base class, so MSVC stopped with C2791. When the class cannot be named so, for example a dependent base, Dredd does not mutate that expression or operator. | not opened |
 | `upstream/tracking-file-open-once` (stacked on `upstream/tracking-prelude-without-stl`) | Both tracking preludes open the tracking file once for each program, at the first reached mutation group, and keep the stream beside the lock of the file. Each group writes its lines and flushes them under the lock, so that a crash loses no recorded mutant. The preludes used to open and close the file for each group: on Windows, with the virus scanner, a test that reached thousands of groups took many times longer with the tracking than without it, above all with many test processes at the same time. | not opened |
 | `upstream/nrvo-copy-elision` | `getSourceLocationInMainFileForExtremeOfRange` returns a conditional expression, not the named `macro_expansion_location` from one branch. Clang 22 reported the copy with `-Wnrvo`, which `-Weverything` enables, so a build with Clang 22 itself as the compiler stopped with `-Werror`. The Linux CI jobs compile with the runner's Clang 18 and do not see it. | not opened |
+| `upstream/unread-local-values` | Dredd leaves out a mutant whose only effect is another value for a local variable of scalar type that is never referenced, such as the debug variable in `[[maybe_unused]] int n = list.Extent();`: the insertion of `!`, `~` or `-`, an operator replacement that evaluates the same operands, or any mutant of an initializer without side effects. A mutant that can skip or change a side effect is kept, such as the replacement of `list.Extent()` with 0, which skips the call, and so are `++` and `--` of a variable that the initializer reads. Optimisation `--opt-do-not-mutate-unread-local-values`, on by default. The single-file tests that used unread variables read them with `(void)x;`, so that they keep their mutants. | not opened |
 
 ### Fork-only files
 
@@ -50,7 +51,7 @@ old_newer_llvm=$(git rev-parse upstream/newer-llvm)
 old_prelude_without_stl=$(git rev-parse upstream/prelude-without-stl)
 old_tracking_prelude_without_stl=$(git rev-parse upstream/tracking-prelude-without-stl)
 git checkout main && git merge --ff-only upstream/main
-for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments upstream/adjacent-statements upstream/nrvo-copy-elision; do
+for b in upstream/newer-llvm upstream/ms-compat-dependent-npc upstream/utf8-bom upstream/prelude-without-stl upstream/ignore-comments upstream/adjacent-statements upstream/nrvo-copy-elision upstream/unread-local-values; do
   git rebase main "$b"
 done
 git rebase --onto upstream/prelude-without-stl "$old_prelude_without_stl" upstream/tracking-prelude-without-stl
