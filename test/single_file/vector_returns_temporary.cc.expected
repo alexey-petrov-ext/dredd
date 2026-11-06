@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 8) {
+        if (value >= 0 && value < 7) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -101,9 +101,9 @@ static unsigned int __dredd_replace_expr_unsigned_int_unread(__dredd_lazy<unsign
 
 std::vector<unsigned int> bar() {
     std::vector<unsigned int> res(__dredd_replace_expr_unsigned_long_constant(4, 0));
-    if (!__dredd_enabled_mutation(3)) { return res; }
+    return res;
 }
 
 int main() {
-    unsigned foo = __dredd_replace_expr_unsigned_int_unread([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long_zero(0, 4)]); }, 6);
+    unsigned foo = __dredd_replace_expr_unsigned_int_unread([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long_zero(0, 3)]); }, 5);
 }

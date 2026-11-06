@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 109) {
+        if (value >= 0 && value < 108) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -155,9 +155,9 @@ static int __dredd_replace_binary_operator_Add_arg1_int_arg2_int(__dredd_lazy<in
 int Count(int n) {
   thread_local int calls = __dredd_replace_expr_int(0, 0);
   if (!__dredd_enabled_mutation(44)) { __dredd_replace_binary_operator_Assign_arg1_int_arg2_int(calls , __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(calls, 6), 8) , __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(n, 14), 16), 22), 28), 34); }
-  if (!__dredd_enabled_mutation(71)) { return __dredd_replace_expr_int(__dredd_replace_binary_operator_Mul_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(calls, 45), 47) , __dredd_replace_expr_int(2, 53), 59), 65); }
+  return __dredd_replace_expr_int(__dredd_replace_binary_operator_Mul_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(calls, 45), 47) , __dredd_replace_expr_int(2, 53), 59), 65);
 }
 
 int main() {
-  if (!__dredd_enabled_mutation(108)) { return __dredd_replace_expr_int([&]() -> int { return static_cast<int>(__dredd_replace_binary_operator_Add_arg1_int_arg2_int([&]() -> int { return static_cast<int>(__dredd_replace_expr_int([&]() -> int { return static_cast<int>(Count(__dredd_replace_expr_int(1, 72))); }, 78)); } , [&]() -> int { return static_cast<int>(__dredd_replace_expr_int([&]() -> int { return static_cast<int>(Count(__dredd_replace_expr_int(2, 84))); }, 90)); }, 96)); }, 102); }
+  if (!__dredd_enabled_mutation(107)) { return __dredd_replace_expr_int([&]() -> int { return static_cast<int>(__dredd_replace_binary_operator_Add_arg1_int_arg2_int([&]() -> int { return static_cast<int>(__dredd_replace_expr_int([&]() -> int { return static_cast<int>(Count(__dredd_replace_expr_int(1, 71))); }, 77)); } , [&]() -> int { return static_cast<int>(__dredd_replace_expr_int([&]() -> int { return static_cast<int>(Count(__dredd_replace_expr_int(2, 83))); }, 89)); }, 95)); }, 101); }
 }

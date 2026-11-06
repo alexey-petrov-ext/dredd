@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 154) {
+        if (value >= 0 && value < 151) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -150,20 +150,20 @@ static int __dredd_replace_binary_operator_Add_arg1_int_arg2_int(int arg1, int a
 
 int Read(const int a, const int b) {
   int sum = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_binary_operator_Mul_arg1_int_arg2_int(__dredd_replace_expr_int(a, 0) , __dredd_replace_expr_int(b, 6), 12), 18) , __dredd_replace_expr_int_constant(2, 24), 29), 35);
-  if (!__dredd_enabled_mutation(49)) { return __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(sum, 41), 43); }
+  return __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(sum, 41), 43);
 }
 
 int ReadInCondition(const int a) {
-  if (!__dredd_enabled_mutation(72)) { if (int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 50) , __dredd_replace_expr_int_one(1, 56), 59), 62)) {
-    if (!__dredd_enabled_mutation(71)) { return __dredd_replace_expr_int_one(1, 68); }
+  if (!__dredd_enabled_mutation(71)) { if (int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 49) , __dredd_replace_expr_int_one(1, 55), 58), 61)) {
+    if (!__dredd_enabled_mutation(70)) { return __dredd_replace_expr_int_one(1, 67); }
   } }
-  if (!__dredd_enabled_mutation(75)) { return __dredd_replace_expr_int_zero(0, 73); }
+  return __dredd_replace_expr_int_zero(0, 72);
 }
 
 int ReadInDecltype(const int a) {
-  int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 76) , __dredd_replace_expr_int_one(1, 82), 85), 88);
-  decltype(next) other = __dredd_replace_expr_int_constant(2, 94);
-  if (!__dredd_enabled_mutation(99)) { return other; }
+  int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 74) , __dredd_replace_expr_int_one(1, 80), 83), 86);
+  decltype(next) other = __dredd_replace_expr_int_constant(2, 92);
+  return other;
 }
 
 class Guard {
@@ -173,13 +173,13 @@ class Guard {
 };
 
 void ClassType(const int a) {
-  [[maybe_unused]] Guard guard(__dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 100) , __dredd_replace_expr_int_one(1, 106), 109), 112));
+  [[maybe_unused]] Guard guard(__dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 97) , __dredd_replace_expr_int_one(1, 103), 106), 109));
 }
 
 void Volatile(const int a) {
-  [[maybe_unused]] volatile int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 118) , __dredd_replace_expr_int_one(1, 124), 127), 130);
+  [[maybe_unused]] volatile int next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 115) , __dredd_replace_expr_int_one(1, 121), 124), 127);
 }
 
 void Reference(const int a) {
-  [[maybe_unused]] const int& next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 136) , __dredd_replace_expr_int_one(1, 142), 145), 148);
+  [[maybe_unused]] const int& next = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_rhs_one(__dredd_replace_expr_int(a, 133) , __dredd_replace_expr_int_one(1, 139), 142), 145);
 }

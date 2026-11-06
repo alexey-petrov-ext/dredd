@@ -49,6 +49,7 @@
 #include "libdredd/mutation_replace_unary_operator.h"
 #include "libdredd/options.h"
 #include "libdredd/util.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Support/Casting.h"
 
@@ -265,6 +266,10 @@ bool MutateVisitor::TraverseDecl(clang::Decl* decl) {
       // Because Dredd's mutations occur dynamically, they cannot be applied to
       // C++ constexpr functions, which require compile-time evaluation.
       return true;
+    }
+    if (function_decl->doesThisDeclarationHaveABody() &&
+        MustReturnValue(*function_decl)) {
+      bodies_that_must_return_value_.insert(function_decl->getBody());
     }
   }
 
@@ -851,6 +856,8 @@ bool MutateVisitor::VisitExpr(clang::Expr* expr) {
 }
 
 bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
+  const clang::Stmt* final_return_of_value =
+      GetFinalReturnOfValue(*compound_stmt);
   for (auto* stmt : compound_stmt->body()) {
     // A switch case (a 'case' or 'default') appears as a component of a
     // compound statement, but it is the statement *after* the 'case' or
@@ -895,6 +902,11 @@ bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
       // without risking breaking compilation.
       continue;
     }
+    if (target_stmt == final_return_of_value) {
+      // Without this statement, control would flow off the end of a function
+      // that must return a value.
+      continue;
+    }
     if (options_->GetOptimisations().GetDoNotRemoveCompoundStatements() &&
         llvm::dyn_cast<clang::CompoundStmt>(target_stmt) != nullptr) {
       // It is likely redundant to remove a compound statement since each of its
@@ -909,6 +921,38 @@ bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
         compiler_instance_->getASTContext()));
   }
   return true;
+}
+
+bool MutateVisitor::TraverseLambdaExpr(clang::LambdaExpr* lambda_expr) {
+  if (MustReturnValue(*lambda_expr->getCallOperator())) {
+    bodies_that_must_return_value_.insert(lambda_expr->getBody());
+  }
+  return RecursiveASTVisitor::TraverseLambdaExpr(lambda_expr);
+}
+
+bool MutateVisitor::MustReturnValue(const clang::FunctionDecl& function_decl) {
+  return !function_decl.getReturnType()->isVoidType() &&
+         !function_decl.isMain();
+}
+
+const clang::Stmt* MutateVisitor::GetFinalReturnOfValue(
+    const clang::CompoundStmt& compound_stmt) const {
+  if (!bodies_that_must_return_value_.contains(&compound_stmt)) {
+    return nullptr;
+  }
+  for (const auto* stmt : llvm::reverse(compound_stmt.body())) {
+    if (llvm::isa<clang::NullStmt>(stmt)) {
+      // A null statement after the return statement does not change where
+      // control goes.
+      continue;
+    }
+    const auto* return_stmt = llvm::dyn_cast<clang::ReturnStmt>(stmt);
+    if (return_stmt == nullptr || return_stmt->getRetValue() == nullptr) {
+      return nullptr;
+    }
+    return return_stmt;
+  }
+  return nullptr;
 }
 
 void MutateVisitor::AddMutation(std::unique_ptr<Mutation> mutation) {

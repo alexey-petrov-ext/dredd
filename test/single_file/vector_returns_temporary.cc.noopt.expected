@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 29) {
+        if (value >= 0 && value < 28) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -108,9 +108,9 @@ static int __dredd_replace_expr_int(int arg, int local_mutation_id) {
 
 std::vector<unsigned int> bar() {
     std::vector<unsigned int> res(__dredd_replace_expr_unsigned_long(__dredd_replace_expr_int(4, 0), 6));
-    if (!__dredd_enabled_mutation(10)) { return res; }
+    return res;
 }
 
 int main() {
-    unsigned foo = __dredd_replace_expr_unsigned_int([&]() -> unsigned int { return static_cast<unsigned int>(__dredd_replace_expr_unsigned_int([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long(__dredd_replace_expr_int(0, 11), 17)]); }, 21)); }, 25);
+    unsigned foo = __dredd_replace_expr_unsigned_int([&]() -> unsigned int { return static_cast<unsigned int>(__dredd_replace_expr_unsigned_int([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long(__dredd_replace_expr_int(0, 10), 16)]); }, 20)); }, 24);
 }

@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 12) {
+        if (value >= 0 && value < 11) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -99,5 +99,5 @@ static int __dredd_replace_expr_int(int arg, int local_mutation_id) {
 void foo() {
   int x = __dredd_replace_expr_int_constant(2, 0);
   // It is important that "x" is not mutated in "[x]"
-  auto f = [x]() { if (!__dredd_enabled_mutation(11)) { return __dredd_replace_expr_int(x, 5); } };
+  auto f = [x]() { return __dredd_replace_expr_int(x, 5); };
 }
