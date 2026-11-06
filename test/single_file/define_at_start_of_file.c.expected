@@ -60,4 +60,4 @@ static int __dredd_replace_expr_int_one(int arg, int local_mutation_id) {
 #define API
 API int func1();
 
-int main() { int a = __dredd_replace_expr_int_one(1, 0); }
+int main() { int a = __dredd_replace_expr_int_one(1, 0); (void)a; }

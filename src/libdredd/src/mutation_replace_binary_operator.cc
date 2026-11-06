@@ -40,7 +40,7 @@ namespace dredd {
 MutationReplaceBinaryOperator::MutationReplaceBinaryOperator(
     const clang::BinaryOperator& binary_operator,
     const clang::Preprocessor& preprocessor,
-    const clang::ASTContext& ast_context)
+    const clang::ASTContext& ast_context, bool value_is_unread)
     : binary_operator_(&binary_operator),
       info_for_overall_expr_(
           GetSourceRangeInMainFile(preprocessor, binary_operator), ast_context),
@@ -49,7 +49,11 @@ MutationReplaceBinaryOperator::MutationReplaceBinaryOperator(
           ast_context),
       info_for_rhs_(
           GetSourceRangeInMainFile(preprocessor, *binary_operator.getRHS()),
-          ast_context) {}
+          ast_context),
+      value_is_unread_(value_is_unread) {
+  assert(!(value_is_unread && binary_operator.isAssignmentOp()) &&
+         "An assignment changes a variable that may be read.");
+}
 
 bool MutationReplaceBinaryOperator::IsRedundantReplacementOperator(
     clang::BinaryOperatorKind operator_kind,
@@ -254,6 +258,18 @@ std::string MutationReplaceBinaryOperator::GetFunctionName(
     }
   }
 
+  if (value_is_unread_) {
+    // The mutator function has fewer mutants than the one for an expression
+    // whose value is read, so it needs a name of its own. Which mutants are
+    // left depends on whether the right operand may have a side effect; the
+    // parameter types tell whether the operands are taken in lambdas.
+    result += "_unread";
+    if (binary_operator_->getRHS()->HasSideEffects(
+            ast_context, /*IncludePossibleEffects=*/true)) {
+      result += "_rhs_side_effects";
+    }
+  }
+
   return result;
 }
 
@@ -266,22 +282,33 @@ void MutationReplaceBinaryOperator::GenerateArgumentReplacement(
   if (!ArgumentReplacementIsRelevant(options)) {
     return;
   }
+  // When nothing reads the value of the expression, replacing it with an
+  // operand only matters if the replacement evaluates the other operand
+  // differently: it skips that operand when the mutator function takes it in
+  // a lambda, and replacing "a && b" with "b" evaluates "b" in every case.
+  const bool replace_with_lhs_is_relevant =
+      !value_is_unread_ || LazyRhsMayHaveSideEffects(ast_context, options);
+  const bool replace_with_rhs_is_relevant =
+      !value_is_unread_ || Arg1RequiresLambda(ast_context, options) ||
+      (binary_operator_->isLogicalOp() &&
+       LazyRhsMayHaveSideEffects(ast_context, options));
   // LHS
   // These cases are equivalent to constant replacement with the respective
   // constants
-  if (!options.GetOptimisations().GetLeverageConstantFolding() ||
-      !(MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
-                                                   0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getLHS(), 0.0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
-                                                   1, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getLHS(), 1.0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
-                                                   -1, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getLHS(), -1.0, ast_context))) {
+  if (replace_with_lhs_is_relevant &&
+      (!options.GetOptimisations().GetLeverageConstantFolding() ||
+       !(MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
+                                                    0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getLHS(), 0.0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
+                                                    1, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getLHS(), 1.0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getLHS(),
+                                                    -1, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getLHS(), -1.0, ast_context)))) {
     if (!options.GetOnlyTrackMutantCoverage()) {
       new_function << "  if (__dredd_enabled_mutation(local_mutation_id + "
                    << mutation_id_offset << ")) return " << arg1_evaluated
@@ -296,19 +323,20 @@ void MutationReplaceBinaryOperator::GenerateArgumentReplacement(
   // RHS
   // These cases are equivalent to constant replacement with the respective
   // constants
-  if (!options.GetOptimisations().GetLeverageConstantFolding() ||
-      !(MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
-                                                   0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getRHS(), 0.0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
-                                                   1, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getRHS(), 1.0, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
-                                                   -1, ast_context) ||
-        MutationReplaceExpr::ExprIsEquivalentToFloat(
-            *binary_operator_->getRHS(), -1.0, ast_context))) {
+  if (replace_with_rhs_is_relevant &&
+      (!options.GetOptimisations().GetLeverageConstantFolding() ||
+       !(MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
+                                                    0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getRHS(), 0.0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
+                                                    1, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getRHS(), 1.0, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToInt(*binary_operator_->getRHS(),
+                                                    -1, ast_context) ||
+         MutationReplaceExpr::ExprIsEquivalentToFloat(
+             *binary_operator_->getRHS(), -1.0, ast_context)))) {
     if (!options.GetOnlyTrackMutantCoverage()) {
       new_function << "  if (__dredd_enabled_mutation(local_mutation_id + "
                    << mutation_id_offset << ")) return " << arg2_evaluated
@@ -329,6 +357,16 @@ void MutationReplaceBinaryOperator::GenerateBinaryOperatorReplacement(
     protobufs::MutationReplaceBinaryOperator& protobuf_message) const {
   for (auto operator_kind :
        GetReplacementOperators(options.GetOptimisations(), ast_context)) {
+    if (value_is_unread_ &&
+        !((binary_operator_->isLogicalOp() ||
+           clang::BinaryOperator::isLogicalOp(operator_kind)) &&
+          LazyRhsMayHaveSideEffects(ast_context, options))) {
+      // Both operators evaluate the operands in the same way, so that the
+      // mutant only changes a value that nothing reads. An operator
+      // replacement that involves && or || evaluates the right operand under
+      // another condition.
+      continue;
+    }
     if (!options.GetOnlyTrackMutantCoverage()) {
       new_function << "  if (__dredd_enabled_mutation(local_mutation_id + "
                    << mutation_id_offset << ")) return " << arg1_evaluated
@@ -538,6 +576,16 @@ protobufs::MutationGroup MutationReplaceBinaryOperator::Apply(
                                    ->getName(ast_context.getPrintingPolicy())
                                    .str();
 
+  if (!ast_context.getLangOpts().CPlusPlus && binary_operator_->isLogicalOp() &&
+      value_is_unread_ &&
+      !binary_operator_->getRHS()->HasSideEffects(
+          ast_context, /*IncludePossibleEffects=*/true)) {
+    // Each of the three mutants of a C logical operator evaluates the left
+    // operand, so that only a side effect of the right operand can tell it
+    // apart from the original expression.
+    return {};
+  }
+
   if (!ast_context.getLangOpts().CPlusPlus && binary_operator_->isLogicalOp()) {
     // Logical operators in C require special treatment (see the header file for
     // details). Rather than scattering this special treatment throughout the
@@ -572,14 +620,20 @@ protobufs::MutationGroup MutationReplaceBinaryOperator::Apply(
     }
   }
 
-  ReplaceOperator(lhs_type, rhs_type, new_function_name, ast_context,
-                  preprocessor, first_mutation_id_in_file, mutation_id, options,
-                  rewriter);
-
+  const int first_mutation_id = mutation_id;
   const std::string new_function = GenerateMutatorFunction(
       ast_context, new_function_name, result_type, lhs_type, rhs_type, options,
       mutation_id, inner_result);
   assert(!new_function.empty() && "Unsupported opcode.");
+  if (inner_result.instances().empty()) {
+    // No mutant is left, which can happen when nothing reads the value of the
+    // expression. Leave the operator alone.
+    return {};
+  }
+
+  ReplaceOperator(lhs_type, rhs_type, new_function_name, ast_context,
+                  preprocessor, first_mutation_id_in_file, first_mutation_id,
+                  options, rewriter);
 
   // Add the mutation function to the set of Dredd declarations - there may
   // already be a matching function, in which case duplication will be avoided.
@@ -1168,6 +1222,13 @@ bool MutationReplaceBinaryOperator::Arg2RequiresLambda(
          (binary_operator_->isLogicalOp() ||
           (binary_operator_->getRHS()->HasSideEffects(ast_context) &&
            ArgumentReplacementIsRelevant(options)));
+}
+
+bool MutationReplaceBinaryOperator::LazyRhsMayHaveSideEffects(
+    const clang::ASTContext& ast_context, const Options& options) const {
+  return Arg2RequiresLambda(ast_context, options) &&
+         binary_operator_->getRHS()->HasSideEffects(
+             ast_context, /*IncludePossibleEffects=*/true);
 }
 
 }  // namespace dredd

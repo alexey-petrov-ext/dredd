@@ -5,5 +5,6 @@ int main() {
   float y = 64343.7;
   y -= 1.2;
   double z = x * 5.5;
+  (void)a;
   return z + x;
 }

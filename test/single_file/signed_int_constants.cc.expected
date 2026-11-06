@@ -108,4 +108,9 @@ void foo(int a) {
   const int z = __dredd_replace_expr_int_minus_one(-__dredd_replace_expr_int_one(1, 5), 8);
   const int w = __dredd_replace_expr_int_constant(2, 10);
   const int v = __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(a, 15), 17);
+  (void)x;
+  (void)y;
+  (void)z;
+  (void)w;
+  (void)v;
 }

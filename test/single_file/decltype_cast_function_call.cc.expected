@@ -74,4 +74,5 @@ long bar() {
 
 void foo() {
   unsigned x = __dredd_replace_expr_unsigned_int_constant((decltype(bar())) 'a', 4);
+  (void)x;
 }

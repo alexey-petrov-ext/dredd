@@ -11,4 +11,5 @@ void __dredd_prelude_start();
 
 void a::bar() {
   int x = 2;
+  (void)x;
 }

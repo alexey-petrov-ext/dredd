@@ -33,9 +33,13 @@ namespace dredd {
 
 class MutationReplaceExpr : public Mutation {
  public:
+  // |value_is_unread| tells that the value of |expr| reaches nothing but a
+  // local variable that nothing reads. Only the mutants that can change a side
+  // effect are then kept.
   MutationReplaceExpr(const clang::Expr& expr,
                       const clang::Preprocessor& preprocessor,
-                      const clang::ASTContext& ast_context);
+                      const clang::ASTContext& ast_context,
+                      bool value_is_unread);
 
   protobufs::MutationGroup Apply(
       clang::ASTContext& ast_context, const clang::Preprocessor& preprocessor,
@@ -65,6 +69,11 @@ class MutationReplaceExpr : public Mutation {
   // such a mutation.
   static bool CanMutateLValue(clang::ASTContext& ast_context,
                               const clang::Expr& expr);
+
+  // Determines whether the mutator function takes |expr| in a lambda, so that
+  // a replacement with a constant skips the evaluation of |expr|.
+  static bool ExprRequiresLambda(const clang::Expr& expr,
+                                 const clang::ASTContext& ast_context);
 
  private:
   [[nodiscard]] bool IsRedundantOperatorInsertion(
@@ -178,6 +187,7 @@ class MutationReplaceExpr : public Mutation {
 
   const clang::Expr* expr_;
   InfoForSourceRange info_for_source_range_;
+  bool value_is_unread_;
 };
 
 }  // namespace dredd

@@ -4,4 +4,9 @@ void foo(int a) {
   const int z = -1;
   const int w = 2;
   const int v = a;
+  (void)x;
+  (void)y;
+  (void)z;
+  (void)w;
+  (void)v;
 }

@@ -35,7 +35,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
       while(token) {
         int value = atoi(token);
         int local_value = value - 0;
-        if (local_value >= 0 && local_value < 34) {
+        if (local_value >= 0 && local_value < 48) {
           enabled_bitset[local_value / 64] |= ((uint64_t) 1 << (local_value % 64));
           some_mutation_enabled = 1;
         }
@@ -47,6 +47,13 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
     __dredd_some_mutation_enabled = some_mutation_enabled;
   }
   return enabled_bitset[local_mutation_id / 64] & ((uint64_t) 1 << (local_mutation_id % 64));
+}
+
+static double __dredd_replace_expr_double_lvalue(double* arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return (*arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return ++((*arg));
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return --((*arg));
+  return (*arg);
 }
 
 static double __dredd_replace_expr_double(double arg, int local_mutation_id) {
@@ -71,4 +78,6 @@ static double __dredd_replace_binary_operator_Add_arg1_double_arg2_double(double
 int main() {
   double x = __dredd_replace_expr_double(__dredd_replace_binary_operator_Add_arg1_double_arg2_double(__dredd_replace_expr_double(0.0, 0) , __dredd_replace_expr_double(5.32, 4), 8), 13);
   double y = __dredd_replace_expr_double(__dredd_replace_binary_operator_Add_arg1_double_arg2_double(__dredd_replace_expr_double(5.234, 17) , __dredd_replace_expr_double(2.352, 21), 25), 30);
+  if (!__dredd_enabled_mutation(40)) { (void)__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(&(x), 34), 36); }
+  if (!__dredd_enabled_mutation(47)) { (void)__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(&(y), 41), 43); }
 }

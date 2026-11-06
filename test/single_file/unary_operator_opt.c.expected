@@ -91,4 +91,7 @@ int main() {
   int x = __dredd_replace_expr_int_minus_one(~__dredd_replace_expr_int_zero(0, 0), 2);
   int y = __dredd_replace_expr_int_constant(~__dredd_replace_expr_int_one(1, 4), 7);
   int z = __dredd_replace_expr_int_zero(__dredd_replace_unary_operator_Not_int_minus_one((__dredd_replace_expr_int_minus_one(-__dredd_replace_expr_int_one(1, 12), 15)), 17), 18);
+  (void)x;
+  (void)y;
+  (void)z;
 }

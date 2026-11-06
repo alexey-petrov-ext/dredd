@@ -67,4 +67,5 @@ template <long c> b<c> d;
 
 void foo() {
   int x = __dredd_replace_expr_int_constant(42, 0);
+  (void)x;
 }

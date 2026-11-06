@@ -173,6 +173,10 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
 
   void HandleExpr(clang::Expr* expr);
 
+  // Adds the mutation that replaces |expr|, unless each of its mutants would
+  // only change a value that nothing reads.
+  void AddMutationReplaceExpr(const clang::Expr& expr);
+
   static bool IsTypeSupported(clang::QualType qual_type);
 
   // Determines whether the AST node being visited is directly inside a
@@ -248,6 +252,25 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   void SaveConstantTemplateArgumentForRewrite(
       const clang::TemplateSpecializationType* template_specialization_type);
 
+  // Determines whether nothing reads the value of |var_decl|: a local variable
+  // of scalar type that is never referenced, not even in an unevaluated
+  // operand such as that of 'sizeof'. It is not volatile, and no cleanup
+  // function receives its address.
+  static bool IsUnreadLocalScalar(const clang::VarDecl& var_decl);
+
+  // Records that the value of |expr| reaches nothing but a variable that
+  // nothing reads, and does the same for each subexpression whose value only
+  // reaches the value of |expr|: an operand of an arithmetic operator, for
+  // example, but not an argument of a call, nor the left operand of && when
+  // the right operand has a side effect.
+  void NoteUnreadValue(const clang::Expr& expr);
+
+  // Determines whether |expr| was recorded by NoteUnreadValue, and is not an
+  // l-value: the mutants of an l-value (++ and --) change a variable.
+  [[nodiscard]] bool IsValueUnread(const clang::Expr& expr) const {
+    return !expr.isLValue() && unread_values_.contains(&expr);
+  }
+
   const clang::CompilerInstance* compiler_instance_;
   const Options* options_;
 
@@ -307,6 +330,11 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   // so that their expressions can be rewritten with the integers to which they
   // evaluate.
   std::vector<const clang::Expr*> constant_arguments_to_rewrite_;
+
+  // The expressions whose value reaches nothing but a local variable that
+  // nothing reads (see NoteUnreadValue). A mutation of such an expression
+  // whose only effect is another value would give an equivalent mutant.
+  std::unordered_set<const clang::Expr*> unread_values_;
 };
 
 }  // namespace dredd

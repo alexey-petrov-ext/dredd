@@ -18,9 +18,11 @@
 
 #include <cassert>
 #include <cstddef>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "clang/AST/Attrs.inc"
 #include "clang/AST/Decl.h"
@@ -51,6 +53,126 @@
 #include "llvm/Support/Casting.h"
 
 namespace dredd {
+
+namespace {
+
+// Determines whether |cast_expr| converts a value, or reads an l-value that
+// is not volatile. A mutant of the l-value itself (++ or --) changes a
+// variable, and is kept, but which l-value is read, as decided by the
+// condition of "c ? x : y", only changes the value.
+bool IsConversionOfValue(const clang::CastExpr& cast_expr) {
+  const clang::Expr* sub_expr = cast_expr.getSubExpr();
+  if (cast_expr.getCastKind() == clang::CK_LValueToRValue) {
+    return !sub_expr->getType().isVolatileQualified();
+  }
+  return sub_expr->isPRValue() && sub_expr->getType()->isScalarType() &&
+         cast_expr.getCastKind() != clang::CK_UserDefinedConversion &&
+         cast_expr.getCastKind() != clang::CK_ConstructorConversion &&
+         cast_expr.getCastKind() != clang::CK_Dynamic;
+}
+
+std::vector<const clang::Expr*> GetValueOperandsOfBinaryOperator(
+    const clang::BinaryOperator& binary_operator,
+    const clang::ASTContext& ast_context) {
+  if (binary_operator.isAssignmentOp() || binary_operator.isPtrMemOp() ||
+      binary_operator.getOpcode() == clang::BO_Cmp) {
+    return {};
+  }
+  if (binary_operator.isCommaOp()) {
+    // The value of the left operand is not the value of the expression.
+    return {binary_operator.getRHS()};
+  }
+  if (binary_operator.isLogicalOp() &&
+      binary_operator.getRHS()->HasSideEffects(
+          ast_context, /*IncludePossibleEffects=*/true)) {
+    // The value of the left operand decides whether the right operand is
+    // evaluated.
+    return {binary_operator.getRHS()};
+  }
+  return {binary_operator.getLHS(), binary_operator.getRHS()};
+}
+
+std::vector<const clang::Expr*> GetValueOperandsOfConditionalOperator(
+    const clang::ConditionalOperator& conditional_operator,
+    const clang::ASTContext& ast_context) {
+  const clang::Expr* true_expr = conditional_operator.getTrueExpr();
+  const clang::Expr* false_expr = conditional_operator.getFalseExpr();
+  if (true_expr->HasSideEffects(ast_context,
+                                /*IncludePossibleEffects=*/true) ||
+      false_expr->HasSideEffects(ast_context,
+                                 /*IncludePossibleEffects=*/true)) {
+    // The value of the condition decides which side effects happen.
+    return {true_expr, false_expr};
+  }
+  return {conditional_operator.getCond(), true_expr, false_expr};
+}
+
+std::vector<const clang::Expr*> GetValueOperandsOfInitList(
+    const clang::InitListExpr& init_list_expr) {
+  // A scalar in braces, as in "int x{y};". Both the syntactic and the semantic
+  // form of the list hold the value.
+  std::vector<const clang::Expr*> result;
+  if (!init_list_expr.getType()->isScalarType()) {
+    return result;
+  }
+  const clang::InitListExpr* other_form =
+      init_list_expr.isSemanticForm() ? init_list_expr.getSyntacticForm()
+                                      : init_list_expr.getSemanticForm();
+  for (const clang::InitListExpr* form : {&init_list_expr, other_form}) {
+    if (form != nullptr && form->getNumInits() == 1) {
+      result.push_back(form->getInit(0));
+    }
+  }
+  return result;
+}
+
+// Gives the subexpressions of |expr| whose value only reaches the value of
+// |expr|: another value for such a subexpression changes the value of |expr|,
+// and no side effect.
+std::vector<const clang::Expr*> GetValueOperands(
+    const clang::Expr& expr, const clang::ASTContext& ast_context) {
+  if (const auto* paren_expr = llvm::dyn_cast<clang::ParenExpr>(&expr)) {
+    return {paren_expr->getSubExpr()};
+  }
+  if (const auto* expr_with_cleanups =
+          llvm::dyn_cast<clang::ExprWithCleanups>(&expr)) {
+    return {expr_with_cleanups->getSubExpr()};
+  }
+  if (const auto* cast_expr = llvm::dyn_cast<clang::CastExpr>(&expr)) {
+    if (IsConversionOfValue(*cast_expr)) {
+      return {cast_expr->getSubExpr()};
+    }
+    return {};
+  }
+  if (const auto* unary_operator =
+          llvm::dyn_cast<clang::UnaryOperator>(&expr)) {
+    switch (unary_operator->getOpcode()) {
+      case clang::UO_Plus:
+      case clang::UO_Minus:
+      case clang::UO_Not:
+      case clang::UO_LNot:
+      case clang::UO_Extension:
+        return {unary_operator->getSubExpr()};
+      default:
+        return {};
+    }
+  }
+  if (const auto* binary_operator =
+          llvm::dyn_cast<clang::BinaryOperator>(&expr)) {
+    return GetValueOperandsOfBinaryOperator(*binary_operator, ast_context);
+  }
+  if (const auto* conditional_operator =
+          llvm::dyn_cast<clang::ConditionalOperator>(&expr)) {
+    return GetValueOperandsOfConditionalOperator(*conditional_operator,
+                                                 ast_context);
+  }
+  if (const auto* init_list_expr = llvm::dyn_cast<clang::InitListExpr>(&expr)) {
+    return GetValueOperandsOfInitList(*init_list_expr);
+  }
+  return {};
+}
+
+}  // namespace
 
 MutateVisitor::MutateVisitor(const clang::CompilerInstance& compiler_instance,
                              const Options& options)
@@ -198,6 +320,12 @@ bool MutateVisitor::TraverseVarDecl(clang::VarDecl* var_decl) {
     // In C, static local variables can only be initialized using constant
     // expressions, which require compile-time evaluation.
     return true;
+  }
+  if (options_->GetOptimisations().GetDoNotMutateUnreadLocalValues() &&
+      var_decl->getInit() != nullptr && IsUnreadLocalScalar(*var_decl)) {
+    // Nothing reads the variable, so a mutant whose only effect is another
+    // value for it is equivalent to the original program.
+    NoteUnreadValue(*var_decl->getInit());
   }
 
   enclosing_decls_.push_back(var_decl);
@@ -425,6 +553,13 @@ void MutateVisitor::HandleUnaryOperator(clang::UnaryOperator* unary_operator) {
     }
   }
 
+  if (IsValueUnread(*unary_operator) &&
+      !unary_operator->isIncrementDecrementOp()) {
+    // Each replacement of this operator still evaluates the operand, and only
+    // changes a value that nothing reads.
+    return;
+  }
+
   AddMutation(std::make_unique<MutationReplaceUnaryOperator>(
       *unary_operator, compiler_instance_->getPreprocessor(),
       compiler_instance_->getASTContext()));
@@ -487,9 +622,25 @@ void MutateVisitor::HandleBinaryOperator(
     return;
   }
 
+  // An assignment changes a variable other than the one that nothing reads,
+  // so each mutant of an assignment is kept.
+  const bool value_is_unread =
+      IsValueUnread(*binary_operator) && !binary_operator->isAssignmentOp();
+  if (value_is_unread &&
+      !binary_operator->getLHS()->HasSideEffects(
+          compiler_instance_->getASTContext(),
+          /*IncludePossibleEffects=*/true) &&
+      !binary_operator->getRHS()->HasSideEffects(
+          compiler_instance_->getASTContext(),
+          /*IncludePossibleEffects=*/true)) {
+    // Whichever operands a mutant evaluates, it has no side effect, and only
+    // changes a value that nothing reads.
+    return;
+  }
+
   AddMutation(std::make_unique<MutationReplaceBinaryOperator>(
       *binary_operator, compiler_instance_->getPreprocessor(),
-      compiler_instance_->getASTContext()));
+      compiler_instance_->getASTContext(), value_is_unread));
 }
 
 void MutateVisitor::HandleExpr(clang::Expr* expr) {
@@ -580,9 +731,21 @@ void MutateVisitor::HandleExpr(clang::Expr* expr) {
     }
   }
 
+  AddMutationReplaceExpr(*expr);
+}
+
+void MutateVisitor::AddMutationReplaceExpr(const clang::Expr& expr) {
+  const bool value_is_unread = IsValueUnread(expr);
+  if (value_is_unread && !MutationReplaceExpr::ExprRequiresLambda(
+                             expr, compiler_instance_->getASTContext())) {
+    // Only a constant replacement can skip the evaluation of the expression,
+    // when the mutator function takes the expression in a lambda. Every other
+    // mutant only changes a value that nothing reads.
+    return;
+  }
   AddMutation(std::make_unique<MutationReplaceExpr>(
-      *expr, compiler_instance_->getPreprocessor(),
-      compiler_instance_->getASTContext()));
+      expr, compiler_instance_->getPreprocessor(),
+      compiler_instance_->getASTContext(), value_is_unread));
 }
 
 bool MutateVisitor::VisitExpr(clang::Expr* expr) {
@@ -732,6 +895,24 @@ void MutateVisitor::AddMutation(std::unique_ptr<Mutation> mutation) {
 bool MutateVisitor::VisitVarDecl(clang::VarDecl* var_decl) {
   var_decl_source_locations_.insert(var_decl->getLocation());
   return true;
+}
+
+bool MutateVisitor::IsUnreadLocalScalar(const clang::VarDecl& var_decl) {
+  // A variable of class type is left alone: its initializer can give the
+  // arguments of a constructor, such as that of a guard, whose side effects
+  // matter. A reference is not of scalar type.
+  return var_decl.isLocalVarDecl() && !var_decl.isImplicit() &&
+         !var_decl.isReferenced() && var_decl.getType()->isScalarType() &&
+         !var_decl.getType().isVolatileQualified() &&
+         !var_decl.hasAttr<clang::CleanupAttr>();
+}
+
+void MutateVisitor::NoteUnreadValue(const clang::Expr& expr) {
+  unread_values_.insert(&expr);
+  for (const clang::Expr* operand :
+       GetValueOperands(expr, compiler_instance_->getASTContext())) {
+    NoteUnreadValue(*operand);
+  }
 }
 
 bool MutateVisitor::IsConversionOfEnumToConstructor(

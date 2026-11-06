@@ -67,4 +67,6 @@ static bool __dredd_replace_expr_bool_false(bool arg, int local_mutation_id) {
 int main() {
   bool x = __dredd_replace_expr_bool_true(true, 0);
   bool y = __dredd_replace_expr_bool_false(false, 1);
+  (void)x;
+  (void)y;
 }

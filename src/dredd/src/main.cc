@@ -114,6 +114,14 @@ static llvm::cl::opt<bool> opt_do_not_mutate_sizeof_and_alignof(
     llvm::cl::desc("Do not mutate arguments to 'sizeof' and 'alignof'"),
     llvm::cl::cat(mutate_category));
 // NOLINTNEXTLINE
+static llvm::cl::opt<bool> opt_do_not_mutate_unread_local_values(
+    "opt-do-not-mutate-unread-local-values",
+    llvm::cl::desc(
+        "Do not apply a mutation whose only effect is another value for a "
+        "local variable of scalar type that is never referenced; a mutation "
+        "that skips a possible side effect of the initializer is kept"),
+    llvm::cl::cat(mutate_category));
+// NOLINTNEXTLINE
 static llvm::cl::opt<bool> only_track_mutant_coverage(
     "only-track-mutant-coverage",
     llvm::cl::desc("Add instrumentation to track which mutants are covered by "
@@ -210,6 +218,11 @@ namespace {
     specific_optimisations_enabled = true;
     enabled_do_not_mutate_sizeof_and_alignof = true;
   }
+  bool enabled_do_not_mutate_unread_local_values = false;
+  if (opt_do_not_mutate_unread_local_values) {
+    specific_optimisations_enabled = true;
+    enabled_do_not_mutate_unread_local_values = true;
+  }
   if (specific_optimisations_enabled) {
     return dredd::Options::Optimisations(
         enabled_do_not_remove_side_effect_free_expression_statements,
@@ -219,7 +232,8 @@ namespace {
         enabled_do_not_replace_relational_with_argument,
         enabled_avoid_redundant_operator_mutation_combinations,
         enabled_avoid_self_inverse_unary_operator_removal,
-        enabled_do_not_mutate_sizeof_and_alignof);
+        enabled_do_not_mutate_sizeof_and_alignof,
+        enabled_do_not_mutate_unread_local_values);
   }
   return no_mutation_opts ? dredd::Options::Optimisations::AllDisabled()
                           : dredd::Options::Optimisations::AllEnabled();

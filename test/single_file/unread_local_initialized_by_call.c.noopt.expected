@@ -1,0 +1,104 @@
+// DREDD PRELUDE START
+// If this has been inserted at an inappropriate place in a source file,
+// declare a placeholder function with the following signature to
+// mandate where the prelude should be placed:
+//
+// void __dredd_prelude_start();
+//
+#include <inttypes.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define thread_local __declspec(thread)
+#elif __APPLE__
+#define thread_local __thread
+#else
+#define thread_local _Thread_local
+#endif
+
+static thread_local int __dredd_some_mutation_enabled = 1;
+static bool __dredd_enabled_mutation(int local_mutation_id) {
+  static thread_local int initialized = 0;
+  static thread_local uint64_t enabled_bitset[1];
+  if (!initialized) {
+    int some_mutation_enabled = 0;
+    const char* dredd_environment_variable = getenv("DREDD_ENABLED_MUTATION");
+    if (dredd_environment_variable) {
+      char* temp = malloc(strlen(dredd_environment_variable) + 1);
+      strcpy(temp, dredd_environment_variable);
+      char* token;
+      token = strtok(temp, ",");
+      while(token) {
+        int value = atoi(token);
+        int local_value = value - 0;
+        if (local_value >= 0 && local_value < 51) {
+          enabled_bitset[local_value / 64] |= ((uint64_t) 1 << (local_value % 64));
+          some_mutation_enabled = 1;
+        }
+        token = strtok(NULL, ",");
+      }
+      free(temp);
+    }
+    initialized = 1;
+    __dredd_some_mutation_enabled = some_mutation_enabled;
+  }
+  return enabled_bitset[local_mutation_id / 64] & ((uint64_t) 1 << (local_mutation_id % 64));
+}
+
+static int __dredd_replace_expr_int(int arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return ~(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return -(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 3)) return 0;
+  if (__dredd_enabled_mutation(local_mutation_id + 4)) return 1;
+  if (__dredd_enabled_mutation(local_mutation_id + 5)) return -1;
+  return arg;
+}
+
+static int __dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_rhs(int arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return 1;
+  return arg;
+}
+static int __dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_outer(int arg, int local_mutation_id) {
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !arg;
+  return arg;
+}
+static int __dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_lhs(int arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return 1;
+  return arg;
+}
+static int __dredd_replace_binary_operator_Add_arg1_int_arg2_int(int arg1, int arg2, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg1 + arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1 / arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1 * arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return arg1 % arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 3)) return arg1 - arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 4)) return arg1;
+  if (__dredd_enabled_mutation(local_mutation_id + 5)) return arg2;
+  return arg1 + arg2;
+}
+
+int Write(int* file);
+
+int Count(void);
+
+void Call(void) {
+  int extent = __dredd_replace_expr_int(Count(), 0);
+}
+
+void CallsInBothOperands(void) {
+  int total = __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_int_arg2_int(__dredd_replace_expr_int(Count(), 6) , __dredd_replace_expr_int(Count(), 12), 18), 24);
+}
+
+void ShortCircuit(int* file) {
+  int both = __dredd_replace_expr_int(__dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_outer(__dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_lhs(__dredd_replace_expr_int(Write(file), 30), 42) && __dredd_replace_binary_operator_LAnd_arg1_int_arg2_int_rhs(__dredd_replace_expr_int(Write(file), 36), 42), 42), 45);
+}

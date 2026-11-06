@@ -64,4 +64,5 @@ static char __dredd_replace_expr_char_constant(char arg, int local_mutation_id) 
 
 int main() {
   char test {__dredd_replace_expr_char_constant(24, 0)};
+  (void)test;
 }

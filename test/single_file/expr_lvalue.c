@@ -3,4 +3,5 @@ int main() {
   int y = x;
   int z;
   z = 6;
+  (void)y;
 }

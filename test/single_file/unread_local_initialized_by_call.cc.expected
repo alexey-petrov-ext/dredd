@@ -1,0 +1,163 @@
+// DREDD PRELUDE START
+// If this has been inserted at an inappropriate place in a source file,
+// declare a placeholder function with the following signature to
+// mandate where the prelude should be placed:
+//
+// void __dredd_prelude_start();
+//
+#include <atomic>
+#include <cinttypes>
+#include <cstddef>
+#include <fstream>
+#include <functional>
+#include <sstream>
+#include <string>
+
+
+#ifdef _MSC_VER
+#define thread_local __declspec(thread)
+#elif __APPLE__
+#define thread_local __thread
+#endif
+
+static thread_local bool __dredd_some_mutation_enabled = true;
+static bool __dredd_enabled_mutation(int local_mutation_id) {
+  static thread_local bool initialized = false;
+  static thread_local uint64_t enabled_bitset[1];
+  if (!initialized) {
+    bool some_mutation_enabled = false;
+    const char* dredd_environment_variable = std::getenv("DREDD_ENABLED_MUTATION");
+    if (dredd_environment_variable != nullptr) {
+      std::string contents(dredd_environment_variable);
+      while (true) {
+        size_t pos = contents.find(",");
+        std::string token = (pos == std::string::npos ? contents : contents.substr(0, pos));
+        if (!token.empty()) {
+          int value = std::stoi(token);
+          int local_value = value - 0;
+          if (local_value >= 0 && local_value < 41) {
+            enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
+            some_mutation_enabled = true;
+          }
+        }
+        if (pos == std::string::npos) {
+          break;
+        }
+        contents.erase(0, pos + 1);
+      }
+    }
+    initialized = true;
+    __dredd_some_mutation_enabled = some_mutation_enabled;
+  }
+  return (enabled_bitset[local_mutation_id / 64] & (static_cast<uint64_t>(1) << (local_mutation_id % 64))) != 0;
+}
+
+static int __dredd_replace_unary_operator_PostInc_int(int& arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg++;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg--;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return ~arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return -arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 3)) return !arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 4)) return arg;
+  return arg++;
+}
+
+static int __dredd_replace_expr_int_unread(std::function<int()> arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return 0;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return 1;
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return -1;
+  return arg();
+}
+
+static int __dredd_replace_expr_int_lvalue(int& arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return ++(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return --(arg);
+  return arg;
+}
+
+static int __dredd_replace_binary_operator_Mul_arg1_int_arg2_int_unread(std::function<int()> arg1, int arg2, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg1() * arg2;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg2;
+  return arg1() * arg2;
+}
+
+static int __dredd_replace_binary_operator_Add_arg1_int_arg2_int_unread_rhs_side_effects(std::function<int()> arg1, std::function<int()> arg2, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg1() + arg2();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1();
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg2();
+  return arg1() + arg2();
+}
+
+static bool __dredd_replace_expr_bool_unread(std::function<bool()> arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return true;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return false;
+  return arg();
+}
+
+static bool __dredd_replace_expr_bool_omit_true_unread(std::function<bool()> arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return false;
+  return arg();
+}
+
+static bool __dredd_replace_expr_bool_before_logical_operator_argument_unread(std::function<bool()> arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return true;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return false;
+  return arg();
+}
+
+static bool __dredd_replace_expr_bool_before_logical_operator_argument(std::function<bool()> arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return true;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return false;
+  return arg();
+}
+
+static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool_unread_rhs_side_effects(std::function<bool()> arg1, std::function<bool()> arg2, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg1() && arg2();
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return arg1() == arg2();
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return arg1();
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return arg2();
+  return arg1() && arg2();
+}
+
+bool Write(int* file);
+
+int Count();
+
+class List {
+ public:
+  int Extent() const;
+};
+
+void MemberCall(const List& list) {
+  [[maybe_unused]] int extent = __dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(list.Extent()); }, 0);
+}
+
+void BoolCall(int* file) {
+  [[maybe_unused]] bool ok = __dredd_replace_expr_bool_unread([&]() -> bool { return static_cast<bool>(Write(file)); }, 3);
+}
+
+void CallInOperand(const int a) {
+  [[maybe_unused]] int scaled = __dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(__dredd_replace_binary_operator_Mul_arg1_int_arg2_int_unread([&]() -> int { return static_cast<int>(__dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(Count()); }, 5)); } , a, 8)); }, 9);
+}
+
+void CallsInBothOperands() {
+  [[maybe_unused]] int total = __dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(__dredd_replace_binary_operator_Add_arg1_int_arg2_int_unread_rhs_side_effects([&]() -> int { return static_cast<int>(__dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(Count()); }, 12)); } , [&]() -> int { return static_cast<int>(__dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(Count()); }, 15)); }, 18)); }, 20);
+}
+
+void ShortCircuit(int* file) {
+  [[maybe_unused]] bool both = __dredd_replace_expr_bool_omit_true_unread([&]() -> bool { return static_cast<bool>(__dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool_unread_rhs_side_effects([&]() -> bool { return static_cast<bool>(__dredd_replace_expr_bool_before_logical_operator_argument([&]() -> bool { return static_cast<bool>(Write(file)); }, 23)); } , [&]() -> bool { return static_cast<bool>(__dredd_replace_expr_bool_before_logical_operator_argument_unread([&]() -> bool { return static_cast<bool>(Write(file)); }, 25)); }, 27)); }, 30);
+}
+
+void Increment(int& counter) {
+  [[maybe_unused]] int before = __dredd_replace_expr_int_unread([&]() -> int { return static_cast<int>(__dredd_replace_unary_operator_PostInc_int(counter, 31)); }, 36);
+}
+
+void ReadOfVariable(int& value) {
+  [[maybe_unused]] int copy = __dredd_replace_expr_int_lvalue(value, 39);
+}
