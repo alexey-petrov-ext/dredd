@@ -210,6 +210,50 @@ int neg(int x) {
                   expected_dredd_declaration, 2);
 }
 
+TEST(MutationReplaceExprTest, DoNotInsertMinusBeforeArgumentOfStdAbs) {
+  // As in libc++, 'std::abs' is in an inline namespace. Inserting '-' before
+  // its argument would lead to an equivalent mutant.
+  const std::string original =
+      R"(
+namespace std {
+inline namespace __1 {
+int abs(int x);
+}
+}
+
+void foo(int x) {
+  std::abs(x);
+}
+)";
+  const std::string expected =
+      R"(
+namespace std {
+inline namespace __1 {
+int abs(int x);
+}
+}
+
+void foo(int x) {
+  std::abs(__dredd_replace_expr_int_abs_argument(x, 0));
+}
+)";
+  const std::string expected_dredd_declaration =
+      R"(static int __dredd_replace_expr_int_abs_argument(int arg, int local_mutation_id) {
+  if (!__dredd_some_mutation_enabled) return arg;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return ~(arg);
+  if (__dredd_enabled_mutation(local_mutation_id + 2)) return 0;
+  if (__dredd_enabled_mutation(local_mutation_id + 3)) return 1;
+  if (__dredd_enabled_mutation(local_mutation_id + 4)) return -1;
+  return arg;
+}
+
+)";
+  const int kNumReplacements = 5;
+  TestReplacement(original, expected, kNumReplacements,
+                  expected_dredd_declaration, 2);
+}
+
 TEST(MutationReplaceExprTest, MutateLAnd) {
   const std::string original =
       R"(

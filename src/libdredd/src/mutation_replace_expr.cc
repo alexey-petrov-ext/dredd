@@ -21,6 +21,8 @@
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTTypeTraits.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/ParentMapContext.h"
@@ -55,6 +57,51 @@ bool PrecedingCharacterIsIdentifierCharacter(
   return character_before_location == '_' ||
          static_cast<bool>(std::isalnum(character_before_location));
 }
+
+// Determines whether |function_decl| is one of the functions of the C and C++
+// standard libraries that yield the absolute value of their only argument.
+bool IsAbsoluteValueFunction(const clang::FunctionDecl* function_decl) {
+  if (function_decl == nullptr || function_decl->getIdentifier() == nullptr) {
+    return false;
+  }
+  const clang::DeclContext* context =
+      function_decl->getDeclContext()->getRedeclContext();
+  if (!context->isTranslationUnit() && !context->isStdNamespace()) {
+    return false;
+  }
+  const llvm::StringRef name = function_decl->getName();
+  return name == "abs" || name == "labs" || name == "llabs" ||
+         name == "imaxabs" || name == "fabs" || name == "fabsf" ||
+         name == "fabsl";
+}
+
+// Determines whether |expr|, possibly in parentheses and implicitly converted,
+// is the only argument of a call to an absolute value function.
+bool IsArgumentOfAbsoluteValueFunction(const clang::Expr& expr,
+                                       clang::ASTContext& ast_context) {
+  const clang::Expr* argument = &expr;
+  while (true) {
+    const clang::Expr* enclosing_expr = nullptr;
+    for (const auto& parent : ast_context.getParents(*argument)) {
+      if (const auto* call_expr = parent.get<clang::CallExpr>()) {
+        if (call_expr->getNumArgs() == 1 && call_expr->getArg(0) == argument &&
+            IsAbsoluteValueFunction(call_expr->getDirectCallee())) {
+          return true;
+        }
+      } else if (parent.get<clang::ParenExpr>() != nullptr ||
+                 parent.get<clang::ImplicitCastExpr>() != nullptr) {
+        // An implicit conversion to the type of the parameter, which is signed
+        // or floating-point, preserves the symmetry of the absolute value.
+        enclosing_expr = parent.get<clang::Expr>();
+      }
+    }
+    if (enclosing_expr == nullptr) {
+      return false;
+    }
+    argument = enclosing_expr;
+  }
+}
+
 }  // namespace
 
 namespace dredd {
@@ -94,6 +141,17 @@ std::string MutationReplaceExpr::GetFunctionName(
 
   if (optimisations.GetLeverageConstantFolding()) {
     AddOptimisationSpecifier(ast_context, result);
+  }
+
+  if (optimisations.GetAvoidRedundantOperatorMutationCombinations() &&
+      !expr_->isLValue()) {
+    const auto& builtin_type = *expr_->getType()->getAs<clang::BuiltinType>();
+    if ((builtin_type.isSignedInteger() || builtin_type.isFloatingPoint()) &&
+        IsArgumentOfAbsoluteValueFunction(*expr_, ast_context)) {
+      // The mutator function does not insert '-' (see
+      // IsRedundantUnaryMinusInsertion).
+      result += "_abs_argument";
+    }
   }
 
   return result;
@@ -761,12 +819,20 @@ bool MutationReplaceExpr::IsBooleanReplacementRedundantForBinaryOperator(
 }
 
 bool MutationReplaceExpr::IsRedundantUnaryMinusInsertion(
-    const clang::ASTContext& ast_context) const {
+    clang::ASTContext& ast_context) const {
   // It never makes sense to insert '-' before 0 as this would lead to an
   // equivalent mutant. (Technically this may not be true for floating-point
   // due to two values of 0, but the mutant is likely to be equivalent.)
   if (ExprIsEquivalentToInt(*expr_, 0, ast_context) ||
       ExprIsEquivalentToFloat(*expr_, 0.0, ast_context)) {
+    return true;
+  }
+
+  // The absolute value of a number does not depend on its sign, so inserting
+  // '-' before the argument of a function such as 'abs' or 'fabs' leads to an
+  // equivalent mutant. (For the least value of a signed integer type, it leads
+  // to undefined behaviour instead.)
+  if (IsArgumentOfAbsoluteValueFunction(*expr_, ast_context)) {
     return true;
   }
 
