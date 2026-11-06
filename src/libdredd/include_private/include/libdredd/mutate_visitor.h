@@ -93,8 +93,8 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
 
   bool TraverseCompoundStmt(clang::CompoundStmt* compound_stmt);
 
-  // Overridden to record the body of a lambda that must return a value (see
-  // GetFinalReturnOfValue).
+  // Overridden to record the statements in tail position of the body of a
+  // lambda that must return a value (see RecordTailStatements).
   bool TraverseLambdaExpr(clang::LambdaExpr* lambda_expr);
 
   // Overridden to track all source locations associated with variable
@@ -203,18 +203,36 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   // }
   bool IsInFunction();
 
-  // Determines whether control must not flow off the end of the body of
-  // |function_decl|: the function returns a value, and it is not 'main', for
-  // which flowing off the end returns 0.
-  static bool MustReturnValue(const clang::FunctionDecl& function_decl);
+  // Determines whether control must not flow off the end of |body|, the body
+  // of |function_decl|: the function returns a value, and it is not 'main', for
+  // which flowing off the end returns 0. A placeholder return type such as
+  // 'auto' that is deduced only when a template is instantiated (as in a
+  // generic lambda) counts as a value if |body| has a return statement with an
+  // operand, since otherwise it is deduced as void.
+  static bool MustReturnValue(const clang::FunctionDecl& function_decl,
+                              const clang::Stmt& body);
 
-  // Yields the return statement with a value that ends |compound_stmt| when
-  // |compound_stmt| is the body of a function or lambda that must return a
-  // value, and null otherwise. Removing that statement would make control flow
-  // off the end of the function, which is undefined behaviour (in C, when the
-  // caller uses the value), so that no test could reliably kill the mutant.
-  [[nodiscard]] const clang::Stmt* GetFinalReturnOfValue(
-      const clang::CompoundStmt& compound_stmt) const;
+  // Records the statements in tail position of the body of |function_decl|
+  // (see MarkTailStatements), if it has a body and must return a value.
+  // Removing such a statement would make control flow off the end of the
+  // function, which is undefined behaviour (in C, when the caller uses the
+  // value), so that no test could reliably kill the mutant. Coroutines are
+  // left out, because whether control may flow off the end of a coroutine
+  // depends on its promise type.
+  void RecordTailStatements(const clang::FunctionDecl& function_decl);
+
+  // Records |stmt|, which is in tail position, and the statements in it that
+  // are in tail position too. A statement is in tail position when control
+  // flows off the end of the function body whenever the statement completes
+  // normally. The body is in tail position, and if a statement is in tail
+  // position, so are:
+  // - the last statement of a compound statement, and the statements before
+  //   it that are followed only by null statements, possibly labelled;
+  // - both branches of an 'if' statement;
+  // - the body of a 'switch' statement;
+  // - the statement of a label or of an attributed statement;
+  // - the block of a 'try' statement and the block of each of its handlers.
+  void MarkTailStatements(const clang::Stmt* stmt);
 
   // Mutating an enum constant can be problematic when the enum constant is used
   // to implicitly construct a C++ object. This helper method allows detecting
@@ -288,9 +306,9 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   std::unordered_set<clang::Stmt*> contains_continue_for_enclosing_loop_;
   std::unordered_set<clang::Stmt*> contains_case_for_enclosing_switch_;
 
-  // The bodies of the functions and lambdas that must return a value (see
-  // MustReturnValue).
-  std::unordered_set<const clang::Stmt*> bodies_that_must_return_value_;
+  // The statements in tail position of the functions and lambdas that must
+  // return a value, which are not removed (see RecordTailStatements).
+  std::unordered_set<const clang::Stmt*> tail_statements_;
 
   // Records the mutations that can be applied, in a hierarchical manner.
   MutationTreeNode mutation_tree_root_;

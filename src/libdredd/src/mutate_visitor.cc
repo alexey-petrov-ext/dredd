@@ -32,6 +32,7 @@
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/StmtCXX.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
@@ -144,9 +145,8 @@ bool MutateVisitor::TraverseDecl(clang::Decl* decl) {
       // C++ constexpr functions, which require compile-time evaluation.
       return true;
     }
-    if (function_decl->doesThisDeclarationHaveABody() &&
-        MustReturnValue(*function_decl)) {
-      bodies_that_must_return_value_.insert(function_decl->getBody());
+    if (function_decl->doesThisDeclarationHaveABody()) {
+      RecordTailStatements(*function_decl);
     }
   }
 
@@ -670,8 +670,6 @@ bool MutateVisitor::VisitExpr(clang::Expr* expr) {
 }
 
 bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
-  const clang::Stmt* final_return_of_value =
-      GetFinalReturnOfValue(*compound_stmt);
   for (auto* stmt : compound_stmt->body()) {
     // A switch case (a 'case' or 'default') appears as a component of a
     // compound statement, but it is the statement *after* the 'case' or
@@ -716,7 +714,7 @@ bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
       // without risking breaking compilation.
       continue;
     }
-    if (target_stmt == final_return_of_value) {
+    if (tail_statements_.contains(target_stmt)) {
       // Without this statement, control would flow off the end of a function
       // that must return a value.
       continue;
@@ -738,35 +736,108 @@ bool MutateVisitor::TraverseCompoundStmt(clang::CompoundStmt* compound_stmt) {
 }
 
 bool MutateVisitor::TraverseLambdaExpr(clang::LambdaExpr* lambda_expr) {
-  if (MustReturnValue(*lambda_expr->getCallOperator())) {
-    bodies_that_must_return_value_.insert(lambda_expr->getBody());
-  }
+  RecordTailStatements(*lambda_expr->getCallOperator());
   return RecursiveASTVisitor::TraverseLambdaExpr(lambda_expr);
 }
 
-bool MutateVisitor::MustReturnValue(const clang::FunctionDecl& function_decl) {
-  return !function_decl.getReturnType()->isVoidType() &&
-         !function_decl.isMain();
+namespace {
+
+// Determines whether |stmt| is or contains a return statement with an operand
+// that returns from the function that |stmt| is in.
+bool ContainsReturnWithOperand(const clang::Stmt& stmt) {
+  if (const auto* return_stmt = llvm::dyn_cast<clang::ReturnStmt>(&stmt)) {
+    return return_stmt->getRetValue() != nullptr;
+  }
+  if (llvm::isa<clang::LambdaExpr>(stmt)) {
+    // A return statement in the body of a lambda returns from the lambda.
+    return false;
+  }
+  for (const auto* child : stmt.children()) {
+    if (child != nullptr && ContainsReturnWithOperand(*child)) {
+      return true;
+    }
+  }
+  return false;
 }
 
-const clang::Stmt* MutateVisitor::GetFinalReturnOfValue(
-    const clang::CompoundStmt& compound_stmt) const {
-  if (!bodies_that_must_return_value_.contains(&compound_stmt)) {
-    return nullptr;
-  }
-  for (const auto* stmt : llvm::reverse(compound_stmt.body())) {
-    if (llvm::isa<clang::NullStmt>(stmt)) {
-      // A null statement after the return statement does not change where
-      // control goes.
-      continue;
+// Yields |stmt| without the labels and attributes in front of it.
+const clang::Stmt* SkipLabelsAndAttributes(const clang::Stmt* stmt) {
+  while (true) {
+    if (const auto* switch_case = llvm::dyn_cast<clang::SwitchCase>(stmt)) {
+      stmt = switch_case->getSubStmt();
+    } else if (const auto* label_stmt =
+                   llvm::dyn_cast<clang::LabelStmt>(stmt)) {
+      stmt = label_stmt->getSubStmt();
+    } else if (const auto* attributed_stmt =
+                   llvm::dyn_cast<clang::AttributedStmt>(stmt)) {
+      stmt = attributed_stmt->getSubStmt();
+    } else {
+      return stmt;
     }
-    const auto* return_stmt = llvm::dyn_cast<clang::ReturnStmt>(stmt);
-    if (return_stmt == nullptr || return_stmt->getRetValue() == nullptr) {
-      return nullptr;
-    }
-    return return_stmt;
   }
-  return nullptr;
+}
+
+}  // namespace
+
+bool MutateVisitor::MustReturnValue(const clang::FunctionDecl& function_decl,
+                                    const clang::Stmt& body) {
+  if (function_decl.isMain()) {
+    return false;
+  }
+  const clang::QualType return_type = function_decl.getReturnType();
+  if (const auto* deduced_type = return_type->getContainedDeducedType();
+      deduced_type != nullptr &&
+      (deduced_type->getDeducedType().isNull() ||
+       deduced_type->getDeducedType()->isDependentType())) {
+    // In a template, a placeholder such as 'auto' stays undeduced (and counts
+    // as dependent rather than as void).
+    return ContainsReturnWithOperand(body);
+  }
+  return !return_type->isVoidType();
+}
+
+void MutateVisitor::RecordTailStatements(
+    const clang::FunctionDecl& function_decl) {
+  const clang::Stmt* body = function_decl.getBody();
+  if (body == nullptr || llvm::isa<clang::CoroutineBodyStmt>(body) ||
+      !MustReturnValue(function_decl, *body)) {
+    return;
+  }
+  MarkTailStatements(body);
+}
+
+void MutateVisitor::MarkTailStatements(const clang::Stmt* stmt) {
+  if (stmt == nullptr) {
+    return;
+  }
+  tail_statements_.insert(stmt);
+  if (const auto* compound_stmt = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
+    for (const auto* sub_stmt : llvm::reverse(compound_stmt->body())) {
+      MarkTailStatements(sub_stmt);
+      if (!llvm::isa<clang::NullStmt>(SkipLabelsAndAttributes(sub_stmt))) {
+        break;
+      }
+    }
+  } else if (const auto* if_stmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
+    MarkTailStatements(if_stmt->getThen());
+    MarkTailStatements(if_stmt->getElse());
+  } else if (const auto* switch_stmt =
+                 llvm::dyn_cast<clang::SwitchStmt>(stmt)) {
+    MarkTailStatements(switch_stmt->getBody());
+  } else if (const auto* switch_case =
+                 llvm::dyn_cast<clang::SwitchCase>(stmt)) {
+    MarkTailStatements(switch_case->getSubStmt());
+  } else if (const auto* label_stmt = llvm::dyn_cast<clang::LabelStmt>(stmt)) {
+    MarkTailStatements(label_stmt->getSubStmt());
+  } else if (const auto* attributed_stmt =
+                 llvm::dyn_cast<clang::AttributedStmt>(stmt)) {
+    MarkTailStatements(attributed_stmt->getSubStmt());
+  } else if (const auto* try_stmt = llvm::dyn_cast<clang::CXXTryStmt>(stmt)) {
+    MarkTailStatements(try_stmt->getTryBlock());
+    for (unsigned int index = 0; index < try_stmt->getNumHandlers(); index++) {
+      MarkTailStatements(try_stmt->getHandler(index)->getHandlerBlock());
+    }
+  }
 }
 
 void MutateVisitor::AddMutation(std::unique_ptr<Mutation> mutation) {
