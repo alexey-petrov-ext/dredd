@@ -96,7 +96,7 @@ class MutationReplaceExpr : public Mutation {
       const clang::ASTContext& ast_context) const;
 
   [[nodiscard]] bool IsRedundantUnaryMinusInsertion(
-      const clang::ASTContext& ast_context) const;
+      clang::ASTContext& ast_context) const;
 
   void AddOptimisationSpecifier(clang::ASTContext& ast_context,
                                 std::string& function_name) const;
