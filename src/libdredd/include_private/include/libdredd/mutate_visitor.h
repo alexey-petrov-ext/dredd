@@ -93,6 +93,10 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
 
   bool TraverseCompoundStmt(clang::CompoundStmt* compound_stmt);
 
+  // Overridden to record the body of a lambda that must return a value (see
+  // GetFinalReturnOfValue).
+  bool TraverseLambdaExpr(clang::LambdaExpr* lambda_expr);
+
   // Overridden to track all source locations associated with variable
   // declarations, in order to avoid mutating variable declaration reference
   // expressions that collide with the declaration of the variable being
@@ -199,6 +203,19 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   // }
   bool IsInFunction();
 
+  // Determines whether control must not flow off the end of the body of
+  // |function_decl|: the function returns a value, and it is not 'main', for
+  // which flowing off the end returns 0.
+  static bool MustReturnValue(const clang::FunctionDecl& function_decl);
+
+  // Yields the return statement with a value that ends |compound_stmt| when
+  // |compound_stmt| is the body of a function or lambda that must return a
+  // value, and null otherwise. Removing that statement would make control flow
+  // off the end of the function, which is undefined behaviour (in C, when the
+  // caller uses the value), so that no test could reliably kill the mutant.
+  [[nodiscard]] const clang::Stmt* GetFinalReturnOfValue(
+      const clang::CompoundStmt& compound_stmt) const;
+
   // Mutating an enum constant can be problematic when the enum constant is used
   // to implicitly construct a C++ object. This helper method allows detecting
   // this special case, so that it can be ignored.
@@ -270,6 +287,10 @@ class MutateVisitor : public clang::RecursiveASTVisitor<MutateVisitor> {
   std::unordered_set<clang::Stmt*> contains_break_for_enclosing_loop_or_switch_;
   std::unordered_set<clang::Stmt*> contains_continue_for_enclosing_loop_;
   std::unordered_set<clang::Stmt*> contains_case_for_enclosing_switch_;
+
+  // The bodies of the functions and lambdas that must return a value (see
+  // MustReturnValue).
+  std::unordered_set<const clang::Stmt*> bodies_that_must_return_value_;
 
   // Records the mutations that can be applied, in a hierarchical manner.
   MutationTreeNode mutation_tree_root_;

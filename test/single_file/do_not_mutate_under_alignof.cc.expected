@@ -35,7 +35,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (!token.empty()) {
           int value = std::stoi(token);
           int local_value = value - 0;
-          if (local_value >= 0 && local_value < 18) {
+          if (local_value >= 0 && local_value < 17) {
             enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
             some_mutation_enabled = true;
           }
@@ -83,5 +83,5 @@ static int __dredd_replace_expr_int_constant(int arg, int local_mutation_id) {
 
 int foo(int* x, int y) {
   // No mutation inside the `alignof` should occur
-  if (!__dredd_enabled_mutation(17)) { return __dredd_replace_expr_int_constant(__dredd_replace_binary_operator_Add_arg1_unsigned_long_arg2_unsigned_long(__dredd_replace_expr_unsigned_long_constant(alignof(x[y + 3]), 0) , __dredd_replace_expr_unsigned_long_constant(alignof(y), 3), 6), 12); }
+  return __dredd_replace_expr_int_constant(__dredd_replace_binary_operator_Add_arg1_unsigned_long_arg2_unsigned_long(__dredd_replace_expr_unsigned_long_constant(alignof(x[y + 3]), 0) , __dredd_replace_expr_unsigned_long_constant(alignof(y), 3), 6), 12);
 }

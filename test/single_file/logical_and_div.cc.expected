@@ -35,7 +35,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (!token.empty()) {
           int value = std::stoi(token);
           int local_value = value - 0;
-          if (local_value >= 0 && local_value < 53) {
+          if (local_value >= 0 && local_value < 52) {
             enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
             some_mutation_enabled = true;
           }
@@ -117,5 +117,5 @@ static bool __dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool(bool arg1, 
 }
 
 int foo(int a, int b) {
-  if (!__dredd_enabled_mutation(52)) { return __dredd_replace_expr_int(__dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool((__dredd_replace_expr_bool_omit_false(__dredd_replace_binary_operator_NE_arg1_int_arg2_int_rhs_zero(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(b, 0), 2) , __dredd_replace_expr_int_zero(0, 8), 10), 12)) , [&]() -> bool { return static_cast<bool>(__dredd_replace_expr_bool_before_logical_operator_argument((__dredd_replace_expr_int(__dredd_replace_binary_operator_Div_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(a, 13), 15) , __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(b, 21), 23), 29), 35)), 41)); }, 43), 46); }
+  return __dredd_replace_expr_int(__dredd_replace_binary_operator_LAnd_arg1_bool_arg2_bool((__dredd_replace_expr_bool_omit_false(__dredd_replace_binary_operator_NE_arg1_int_arg2_int_rhs_zero(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(b, 0), 2) , __dredd_replace_expr_int_zero(0, 8), 10), 12)) , [&]() -> bool { return static_cast<bool>(__dredd_replace_expr_bool_before_logical_operator_argument((__dredd_replace_expr_int(__dredd_replace_binary_operator_Div_arg1_int_arg2_int(__dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(a, 13), 15) , __dredd_replace_expr_int(__dredd_replace_expr_int_lvalue(b, 21), 23), 29), 35)), 41)); }, 43), 46);
 }

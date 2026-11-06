@@ -35,7 +35,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (!token.empty()) {
           int value = std::stoi(token);
           int local_value = value - 0;
-          if (local_value >= 0 && local_value < 14) {
+          if (local_value >= 0 && local_value < 13) {
             enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
             some_mutation_enabled = true;
           }
@@ -83,5 +83,5 @@ static bool __dredd_replace_expr_bool(std::function<bool()> arg, int local_mutat
 bool f(int);
 
 template <typename a> struct b {
-  bool c() { if (!__dredd_enabled_mutation(13)) { return __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(f(__dredd_replace_expr_int(__dredd_replace_expr_unsigned_long(sizeof(a), 0), 4))); }, 10); } }
+  bool c() { return __dredd_replace_expr_bool([&]() -> bool { return static_cast<bool>(f(__dredd_replace_expr_int(__dredd_replace_expr_unsigned_long(sizeof(a), 0), 4))); }, 10); }
 };
