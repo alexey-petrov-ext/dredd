@@ -59,7 +59,8 @@ void TestReplacement(const std::string& original, const std::string& expected,
   ASSERT_LT(expression_to_replace, expression.size());
   const MutationReplaceExpr mutation(
       *expression[expression_to_replace].getNodeAs<clang::Expr>("expr"),
-      ast_unit->getPreprocessor(), ast_unit->getASTContext());
+      ast_unit->getPreprocessor(), ast_unit->getASTContext(),
+      /*value_is_unread=*/false);
 
   clang::Rewriter rewriter(ast_unit->getSourceManager(),
                            ast_unit->getLangOpts());
@@ -101,7 +102,7 @@ void TestReplacementWithMicrosoftExtensions(
   for (const auto& expression : llvm::reverse(expressions)) {
     const MutationReplaceExpr mutation(
         *expression.getNodeAs<clang::Expr>("expr"), ast_unit->getPreprocessor(),
-        ast_unit->getASTContext());
+        ast_unit->getASTContext(), /*value_is_unread=*/false);
     mutation.Apply(ast_unit->getASTContext(), ast_unit->getPreprocessor(),
                    Options(), 0, mutation_id, rewriter, dredd_declarations);
   }

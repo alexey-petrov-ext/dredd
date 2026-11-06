@@ -34,9 +34,13 @@ namespace dredd {
 
 class MutationReplaceBinaryOperator : public Mutation {
  public:
+  // |value_is_unread| tells that the value of |binary_operator| reaches
+  // nothing but a local variable that nothing reads. Only the mutants that can
+  // change a side effect are then kept. It must be false for an assignment.
   MutationReplaceBinaryOperator(const clang::BinaryOperator& binary_operator,
                                 const clang::Preprocessor& preprocessor,
-                                const clang::ASTContext& ast_context);
+                                const clang::ASTContext& ast_context,
+                                bool value_is_unread);
 
   protobufs::MutationGroup Apply(
       clang::ASTContext& ast_context, const clang::Preprocessor& preprocessor,
@@ -126,6 +130,13 @@ class MutationReplaceBinaryOperator : public Mutation {
   [[nodiscard]] bool Arg2RequiresLambda(const clang::ASTContext& ast_context,
                                         const Options& options) const;
 
+  // Determines whether the mutator function takes the right operand in a
+  // lambda, and that operand may have a side effect. A mutant can then
+  // evaluate the right operand under another condition than the original
+  // expression, or not at all.
+  [[nodiscard]] bool LazyRhsMayHaveSideEffects(
+      const clang::ASTContext& ast_context, const Options& options) const;
+
   static void AddMutationInstance(
       int mutation_id_base,
       protobufs::MutationReplaceBinaryOperatorAction action,
@@ -143,6 +154,7 @@ class MutationReplaceBinaryOperator : public Mutation {
   InfoForSourceRange info_for_overall_expr_;
   InfoForSourceRange info_for_lhs_;
   InfoForSourceRange info_for_rhs_;
+  bool value_is_unread_;
 };
 
 }  // namespace dredd

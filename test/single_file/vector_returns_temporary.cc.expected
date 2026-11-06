@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 10) {
+        if (value >= 0 && value < 8) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -90,12 +90,10 @@ static unsigned long __dredd_replace_expr_unsigned_long_constant(unsigned long a
   return arg;
 }
 
-static unsigned int __dredd_replace_expr_unsigned_int(__dredd_lazy<unsigned int> arg, int local_mutation_id) {
+static unsigned int __dredd_replace_expr_unsigned_int_unread(__dredd_lazy<unsigned int> arg, int local_mutation_id) {
   if (!__dredd_some_mutation_enabled) return arg();
-  if (__dredd_enabled_mutation(local_mutation_id + 0)) return !(arg());
-  if (__dredd_enabled_mutation(local_mutation_id + 1)) return ~(arg());
-  if (__dredd_enabled_mutation(local_mutation_id + 2)) return 0;
-  if (__dredd_enabled_mutation(local_mutation_id + 3)) return 1;
+  if (__dredd_enabled_mutation(local_mutation_id + 0)) return 0;
+  if (__dredd_enabled_mutation(local_mutation_id + 1)) return 1;
   return arg();
 }
 
@@ -107,5 +105,5 @@ std::vector<unsigned int> bar() {
 }
 
 int main() {
-    unsigned foo = __dredd_replace_expr_unsigned_int([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long_zero(0, 4)]); }, 6);
+    unsigned foo = __dredd_replace_expr_unsigned_int_unread([&]() -> unsigned int { return static_cast<unsigned int>(bar()[__dredd_replace_expr_unsigned_long_zero(0, 4)]); }, 6);
 }

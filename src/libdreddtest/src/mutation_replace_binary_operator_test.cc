@@ -56,7 +56,8 @@ void TestReplacement(const std::string& original, const std::string& expected,
 
   const MutationReplaceBinaryOperator mutation(
       *binary_operator[0].getNodeAs<clang::BinaryOperator>("op"),
-      ast_unit->getPreprocessor(), ast_unit->getASTContext());
+      ast_unit->getPreprocessor(), ast_unit->getASTContext(),
+      /*value_is_unread=*/false);
 
   clang::Rewriter rewriter(ast_unit->getSourceManager(),
                            ast_unit->getLangOpts());

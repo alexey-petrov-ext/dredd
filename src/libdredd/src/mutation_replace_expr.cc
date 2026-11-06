@@ -63,10 +63,11 @@ bool PrecedingCharacterIsIdentifierCharacter(
 namespace dredd {
 dredd::MutationReplaceExpr::MutationReplaceExpr(
     const clang::Expr& expr, const clang::Preprocessor& preprocessor,
-    const clang::ASTContext& ast_context)
+    const clang::ASTContext& ast_context, bool value_is_unread)
     : expr_(&expr),
       info_for_source_range_(GetSourceRangeInMainFile(preprocessor, expr),
-                             ast_context) {}
+                             ast_context),
+      value_is_unread_(value_is_unread) {}
 
 std::string MutationReplaceExpr::GetFunctionName(
     const Options::Optimisations& optimisations,
@@ -97,6 +98,12 @@ std::string MutationReplaceExpr::GetFunctionName(
 
   if (optimisations.GetLeverageConstantFolding()) {
     AddOptimisationSpecifier(ast_context, result);
+  }
+
+  if (value_is_unread_) {
+    // The mutator function has fewer mutants than the one for an expression
+    // whose value is read, so it needs a name of its own.
+    result += "_unread";
   }
 
   return result;
@@ -297,6 +304,11 @@ void MutationReplaceExpr::GenerateUnaryOperatorInsertion(
   GenerateUnaryOperatorInsertionBeforeLValue(
       arg_evaluated, ast_context, only_track_mutant_coverage, mutation_id_base,
       new_function, mutation_id_offset, protobuf_message);
+  if (value_is_unread_) {
+    // An operator applied to the value of the expression, after its
+    // evaluation, only changes a value that nothing reads.
+    return;
+  }
   GenerateUnaryOperatorInsertionBeforeNonLValue(
       arg_evaluated, ast_context, optimisations, only_track_mutant_coverage,
       mutation_id_base, new_function, mutation_id_offset, protobuf_message);
@@ -307,7 +319,11 @@ void MutationReplaceExpr::GenerateConstantReplacement(
     bool only_track_mutant_coverage, int mutation_id_base,
     std::stringstream& new_function, int& mutation_id_offset,
     protobufs::MutationReplaceExpr& protobuf_message) const {
-  if (!expr_->isLValue()) {
+  // When nothing reads the value of the expression, a constant replacement
+  // only matters if it skips the evaluation of the expression. It does so when
+  // the mutator function takes the expression in a lambda.
+  if (!expr_->isLValue() &&
+      (!value_is_unread_ || ArgRequiresLambda(ast_context))) {
     GenerateBooleanConstantReplacement(
         ast_context, optimisations, only_track_mutant_coverage,
         mutation_id_base, new_function, mutation_id_offset, protobuf_message);
@@ -929,8 +945,13 @@ bool MutationReplaceExpr::IsSubjectToImplicitCastInInitializerList(
 
 bool MutationReplaceExpr::ArgRequiresLambda(
     const clang::ASTContext& ast_context) const {
+  return ExprRequiresLambda(*expr_, ast_context);
+}
+
+bool MutationReplaceExpr::ExprRequiresLambda(
+    const clang::Expr& expr, const clang::ASTContext& ast_context) {
   return ast_context.getLangOpts().CPlusPlus &&
-         expr_->HasSideEffects(ast_context);
+         expr.HasSideEffects(ast_context);
 }
 
 }  // namespace dredd

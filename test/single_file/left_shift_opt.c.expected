@@ -66,4 +66,5 @@ static int __dredd_replace_expr_int_one(int arg, int local_mutation_id) {
 
 int main() {
   int x = __dredd_replace_expr_int_zero(__dredd_replace_expr_int_zero(0, 0) << __dredd_replace_expr_int_one(1, 2), 5);
+  (void)x;
 }

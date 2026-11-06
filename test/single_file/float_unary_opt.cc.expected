@@ -91,4 +91,5 @@ static double __dredd_replace_expr_double_minus_one(double arg, int local_mutati
 
 int main() {
   double x = __dredd_replace_expr_double_minus_one(-__dredd_replace_expr_double_one(1.0, 0), 2);
+  (void)x;
 }

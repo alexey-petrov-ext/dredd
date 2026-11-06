@@ -137,5 +137,6 @@ int main() {
   float y = __dredd_replace_expr_float(64343.7, 15);
   if (!__dredd_enabled_mutation(27)) { __dredd_replace_binary_operator_SubAssign_arg1_float_arg2_double(&(y) , __dredd_replace_expr_double(1.2, 19), 23); }
   double z = __dredd_replace_expr_double(__dredd_replace_binary_operator_Mul_arg1_double_arg2_double(__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(&(x), 28), 30) , __dredd_replace_expr_double(5.5, 34), 38), 43);
+  (void)a;
   if (!__dredd_enabled_mutation(70)) { return __dredd_replace_expr_int(__dredd_replace_binary_operator_Add_arg1_double_arg2_double(__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(&(z), 47), 49) , __dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(&(x), 53), 55), 59), 64); }
 }

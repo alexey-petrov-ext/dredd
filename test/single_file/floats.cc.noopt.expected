@@ -58,7 +58,7 @@ static bool __dredd_enabled_mutation(int local_mutation_id) {
         if (end == token) {
           std::abort();
         }
-        if (value >= 0 && value < 81) {
+        if (value >= 0 && value < 82) {
           int local_value = static_cast<int>(value - 0);
           enabled_bitset[local_value / 64] |= (static_cast<uint64_t>(1) << (local_value % 64));
           some_mutation_enabled = true;
@@ -156,5 +156,6 @@ int main() {
   float y = __dredd_replace_expr_float(__dredd_replace_expr_double(64343.7, 17), 21);
   if (!__dredd_enabled_mutation(33)) { __dredd_replace_binary_operator_SubAssign_arg1_float_arg2_double(y , __dredd_replace_expr_double(1.2, 25), 29); }
   double z = __dredd_replace_expr_double(__dredd_replace_binary_operator_Mul_arg1_double_arg2_double(__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(x, 34), 36) , __dredd_replace_expr_double(5.5, 40), 44), 49);
-  if (!__dredd_enabled_mutation(80)) { return __dredd_replace_expr_int(__dredd_replace_expr_double(__dredd_replace_binary_operator_Add_arg1_double_arg2_double(__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(z, 53), 55) , __dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(x, 59), 61), 65), 70), 74); }
+  if (!__dredd_enabled_mutation(53)) { (void)a; }
+  if (!__dredd_enabled_mutation(81)) { return __dredd_replace_expr_int(__dredd_replace_expr_double(__dredd_replace_binary_operator_Add_arg1_double_arg2_double(__dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(z, 54), 56) , __dredd_replace_expr_double(__dredd_replace_expr_double_lvalue(x, 60), 62), 66), 71), 75); }
 }

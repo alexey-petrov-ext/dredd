@@ -98,4 +98,5 @@ void __dredd_prelude_start();
 
 void a::bar() {
   int x = __dredd_replace_expr_int_constant(2, 0);
+  (void)x;
 }
